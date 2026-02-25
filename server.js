@@ -28,6 +28,7 @@ const EMAIL_OUTBOX_FILE = path.join(DATA_DIR, "email-outbox.log");
 const AUTH_RATE_LIMIT_MAX = Number(process.env.AUTH_RATE_LIMIT_MAX || 25);
 const AUTH_RATE_LIMIT_WINDOW_MS = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const RESET_DATA_ON_BOOT = String(process.env.RESET_DATA_ON_BOOT || "false").toLowerCase() === "true";
+const ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION = String(process.env.ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION || "true").toLowerCase() === "true";
 
 // Base URL for iSportsman
 const ISPORTSMAN_BASE = "https://ftleonardwood.isportsman.net";
@@ -476,7 +477,8 @@ function fillTemplate(template, fields) {
 }
 
 function getAdminKeyFromRequest(req, url) {
-  const keyFromQuery = NODE_ENV === "production" ? "" : String(url.searchParams.get("key") || "");
+  const canUseQueryInProduction = NODE_ENV !== "production" || ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION;
+  const keyFromQuery = canUseQueryInProduction ? String(url.searchParams.get("key") || "") : "";
   const keyFromHeader = String(req.headers["x-admin-key"] || "");
   return keyFromHeader || keyFromQuery;
 }
