@@ -2326,20 +2326,26 @@
             `<button style="width: 100%; margin-top: 8px; padding: 6px; background: var(--gold); color: #111111; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;" onclick="window.open('https://ftleonardwood.isportsman.net/Login.aspx', '_blank')">SIGN IN</button>`
           );
 
-          layer.on("click", (e) => {
-            if (measuring) {
-              L.DomEvent.stop(e);
-              onMapClickForMeasure(e);
-            }
-          });
+          const bindToolInteractions = (targetLayer) => {
+            targetLayer.on("click", (e) => {
+              if (measuring) {
+                L.DomEvent.stop(e);
+                onMapClickForMeasure(e);
+              }
+            });
 
-          layer.on("dblclick", (e) => {
-            L.DomEvent.stop(e);
-            showWaypointModal(e.latlng);
-          });
+            targetLayer.on("dblclick", (e) => {
+              L.DomEvent.stop(e);
+              showWaypointModal(e.latlng);
+            });
+          };
+
+          bindToolInteractions(layer);
 
           layer.on("mouseover", () => layer.setStyle({ weight: 2, color: "#fbbf24" }));
           layer.on("mouseout", () => layer.setStyle(styleFeature(feature)));
+
+          layer.bindToolInteractions = bindToolInteractions;
         }
 
         flwAreasLayer = L.geoJSON(gj, { style: styleFeature, onEachFeature }).addTo(map);
@@ -2411,6 +2417,9 @@
               fillPattern: archeryHatch
             });
             poly.bindPopup(popupContent);
+            if (typeof layer.bindToolInteractions === "function") {
+              layer.bindToolInteractions(poly);
+            }
             poly.on("mouseover", () => poly.setStyle({ weight: 2, color: "#fbbf24" }));
             poly.on("mouseout", () => poly.setStyle({ weight: 0, color: "transparent" }));
             archeryPolys.push(poly);
@@ -2424,6 +2433,9 @@
               fillPattern: canDots
             });
             poly.bindPopup(popupContent);
+            if (typeof layer.bindToolInteractions === "function") {
+              layer.bindToolInteractions(poly);
+            }
             poly.on("mouseover", () => poly.setStyle({ weight: 2, color: "#fbbf24" }));
             poly.on("mouseout", () => poly.setStyle({ weight: 0, color: "transparent" }));
             cantonmentPolys.push(poly);
