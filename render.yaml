@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: flw-map
+    runtime: node
+    plan: starter
+    autoDeploy: true
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: flw-map-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: APP_BASE_URL
+        value: https://hunt-ao.com
+      - key: CORS_ORIGIN
+        value: https://hunt-ao.com
+      - key: DATA_DIR
+        value: /var/data/flw-map
+      - key: FEEDBACK_TO_EMAIL
+        value: ethanprebleco@gmail.com
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: ADMIN_EXPORT_KEY
+        generateValue: true
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false

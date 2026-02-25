@@ -8,8 +8,8 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const PORT = 5173;
-const DATA_DIR = path.join(__dirname, "data");
+const PORT = Number(process.env.PORT || 5173);
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "app-data.json");
 const TEMPLATE_DIR = path.join(__dirname, "templates");
 const USER_TEMPLATE_FILE = path.join(TEMPLATE_DIR, "user-account-template.html");
