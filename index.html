@@ -1080,8 +1080,16 @@
     const drawer = document.getElementById("drawer");
     const drawerToggle = document.getElementById("drawerToggle");
 
-    drawerToggle.addEventListener("click", () => {
+    drawerToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
       drawer.classList.toggle("open");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!drawer.classList.contains("open")) return;
+      if (drawer.contains(e.target)) return;
+      if (drawerToggle.contains(e.target)) return;
+      drawer.classList.remove("open");
     });
 
     document.querySelectorAll('input[name="basemap"]').forEach(radio => {
@@ -2317,6 +2325,18 @@
             `Signed in: ${signedIn}<br>` +
             `<button style="width: 100%; margin-top: 8px; padding: 6px; background: var(--gold); color: #111111; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;" onclick="window.open('https://ftleonardwood.isportsman.net/Login.aspx', '_blank')">SIGN IN</button>`
           );
+
+          layer.on("click", (e) => {
+            if (measuring) {
+              L.DomEvent.stop(e);
+              onMapClickForMeasure(e);
+            }
+          });
+
+          layer.on("dblclick", (e) => {
+            L.DomEvent.stop(e);
+            showWaypointModal(e.latlng);
+          });
 
           layer.on("mouseover", () => layer.setStyle({ weight: 2, color: "#fbbf24" }));
           layer.on("mouseout", () => layer.setStyle(styleFeature(feature)));
