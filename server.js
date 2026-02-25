@@ -175,10 +175,6 @@ function getProductionConfigErrors() {
   if (status.appBaseIsLocalhost) {
     errors.push("APP_BASE_URL must be your public https URL, not localhost.");
   }
-  if (!status.hasResendKey) {
-    errors.push("RESEND_API_KEY must be set for live email verification/reset/report delivery.");
-  }
-
   return errors;
 }
 
@@ -1360,10 +1356,14 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   ensureDataStore();
   ensureDefaultTemplateFile();
+  const configStatus = getConfigStatus();
   if (NODE_ENV === "production") {
     const errors = getProductionConfigErrors();
     if (errors.length) {
       throw new Error(`Production configuration invalid:\n- ${errors.join("\n- ")}`);
+    }
+    if (!configStatus.hasResendKey) {
+      console.warn("RESEND_API_KEY not set. Verification/reset/report emails will be written to outbox fallback.");
     }
   }
   console.log(`HuntBase server running at http://localhost:${PORT}`);
