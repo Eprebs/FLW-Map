@@ -729,31 +729,44 @@
         <input id="authPasswordInput" type="password" placeholder="At least 8 characters" autocomplete="current-password">
       </label>
 
-      <div style="display: flex; gap: 8px;">
-        <button id="requestVerifyBtn" class="drawer-btn" style="flex: 1;">Send Verify Email</button>
-        <button id="requestResetBtn" class="drawer-btn" style="flex: 1;">Forgot Password</button>
-      </div>
+      <div style="font-size: 12px; color: #666; margin-top: -4px; margin-bottom: 8px;">Step 1: Sign in to sync your waypoints and tracks.</div>
+      <button id="loginBtn" class="drawer-btn">Sign In</button>
 
-      <label class="drawer-label">
-        Reset Token
-        <input id="resetTokenInput" type="text" placeholder="Paste reset token from email link">
-      </label>
+      <div style="height: 1px; background: #ddd; margin: 12px 0;"></div>
 
-      <label class="drawer-label">
-        New Password
-        <input id="newPasswordInput" type="password" placeholder="Set new password">
-      </label>
-      <button id="resetPasswordBtn" class="drawer-btn">Reset Password</button>
-
+      <div style="font-size: 12px; color: #666; margin-bottom: 8px;">Step 2: New here? Add your name and create an account.</div>
       <label class="drawer-label">
         Full Name
         <input id="profileFullName" type="text" placeholder="Optional for account + tracking doc">
       </label>
-
       <div style="display: flex; gap: 8px;">
         <button id="signupBtn" class="drawer-btn" style="flex: 1;">Create Account</button>
-        <button id="loginBtn" class="drawer-btn" style="flex: 1;">Login</button>
+        <button id="requestVerifyBtn" class="drawer-btn" style="flex: 1;">Resend Verify Email</button>
       </div>
+
+      <div style="height: 1px; background: #ddd; margin: 12px 0;"></div>
+
+      <div style="font-size: 12px; color: #666; margin-bottom: 8px;">Step 3: Forgot password? Request reset, then paste token from email.</div>
+      <div style="display: flex; gap: 8px;">
+        <button id="requestResetBtn" class="drawer-btn" style="flex: 1;">Send Reset Email</button>
+        <button id="revealResetFormBtn" class="drawer-btn" style="flex: 1;">I Have Reset Token</button>
+      </div>
+
+      <div id="resetPasswordPanel" style="display: none; margin-top: 8px;">
+        <label class="drawer-label">
+          Reset Token
+          <input id="resetTokenInput" type="text" placeholder="Paste reset token from email link">
+        </label>
+
+        <label class="drawer-label">
+          New Password
+          <input id="newPasswordInput" type="password" placeholder="Set new password">
+        </label>
+        <button id="resetPasswordBtn" class="drawer-btn">Reset Password</button>
+      </div>
+
+      <div style="height: 1px; background: #ddd; margin: 12px 0;"></div>
+      <div style="font-size: 12px; color: #666; margin-bottom: 8px;">Step 4: Signed in profile info and manual sync.</div>
       <button id="logoutBtn" class="drawer-btn">Logout</button>
 
       <label class="drawer-label">
@@ -1205,6 +1218,8 @@
     const authPasswordInput = document.getElementById("authPasswordInput");
     const requestVerifyBtn = document.getElementById("requestVerifyBtn");
     const requestResetBtn = document.getElementById("requestResetBtn");
+    const revealResetFormBtn = document.getElementById("revealResetFormBtn");
+    const resetPasswordPanel = document.getElementById("resetPasswordPanel");
     const resetTokenInput = document.getElementById("resetTokenInput");
     const newPasswordInput = document.getElementById("newPasswordInput");
     const resetPasswordBtn = document.getElementById("resetPasswordBtn");
@@ -1225,6 +1240,10 @@
 
     function setSyncStatus(text) {
       syncStatus.textContent = `Sync status: ${text}`;
+    }
+
+    function showResetPanel() {
+      resetPasswordPanel.style.display = "block";
     }
 
     function setAuthUi() {
@@ -1344,6 +1363,7 @@
       const resetToken = params.get("resetToken");
       const email = params.get("email");
       if (resetToken) {
+        showResetPanel();
         resetTokenInput.value = resetToken;
       }
       if (email) {
@@ -1354,6 +1374,11 @@
         setSyncStatus("Password reset link loaded. Enter a new password and click Reset Password.");
       }
     }
+
+    revealResetFormBtn.addEventListener("click", () => {
+      showResetPanel();
+      resetTokenInput.focus();
+    });
 
     signupBtn.addEventListener("click", async () => {
       try {
@@ -1431,6 +1456,7 @@
         if (data.resetLink) {
           console.info("Dev reset link:", data.resetLink);
         }
+        showResetPanel();
         alert(data.message || "If the email exists, reset instructions were sent.");
       } catch (err) {
         alert(`Could not request password reset: ${err.message}`);
