@@ -27,6 +27,7 @@ const FEEDBACK_TO_EMAIL = process.env.FEEDBACK_TO_EMAIL || "ethanprebleco@gmail.
 const EMAIL_OUTBOX_FILE = path.join(DATA_DIR, "email-outbox.log");
 const AUTH_RATE_LIMIT_MAX = Number(process.env.AUTH_RATE_LIMIT_MAX || 25);
 const AUTH_RATE_LIMIT_WINDOW_MS = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
+const RESET_DATA_ON_BOOT = String(process.env.RESET_DATA_ON_BOOT || "false").toLowerCase() === "true";
 
 // Base URL for iSportsman
 const ISPORTSMAN_BASE = "https://ftleonardwood.isportsman.net";
@@ -63,6 +64,10 @@ function readDataStore() {
 function writeDataStore(data) {
   ensureDataStore();
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
+}
+
+function resetDataStore() {
+  writeDataStore({ users: [], syncByUserId: {} });
 }
 
 function hashToken(token) {
@@ -1354,6 +1359,10 @@ const server = http.createServer(async (req, res) => {
 
 // Start server
 server.listen(PORT, () => {
+  if (RESET_DATA_ON_BOOT) {
+    resetDataStore();
+    console.warn("RESET_DATA_ON_BOOT=true detected. Data store wiped on startup.");
+  }
   ensureDataStore();
   ensureDefaultTemplateFile();
   const configStatus = getConfigStatus();
