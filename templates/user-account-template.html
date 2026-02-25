@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>User Account Record</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+    h1 { margin-bottom: 4px; }
+    .muted { color: #666; margin-bottom: 16px; }
+    table { border-collapse: collapse; width: 100%; max-width: 720px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }
+    th { width: 220px; background: #f6f6f6; }
+  </style>
+</head>
+<body>
+  <h1>User Account Record</h1>
+  <div class="muted">Generated at {{export_generated_at}}</div>
+
+  <table>
+    <tr><th>User ID</th><td>{{user_id}}</td></tr>
+    <tr><th>Email</th><td>{{email}}</td></tr>
+    <tr><th>Full Name</th><td>{{full_name}}</td></tr>
+    <tr><th>Created At</th><td>{{created_at}}</td></tr>
+    <tr><th>Last Login</th><td>{{last_login_at}}</td></tr>
+    <tr><th>Phone</th><td>{{phone}}</td></tr>
+    <tr><th>Vehicle</th><td>{{vehicle}}</td></tr>
+    <tr><th>Emergency Contact</th><td>{{emergency_contact}}</td></tr>
+    <tr><th>Notes</th><td>{{notes}}</td></tr>
+    <tr><th>Waypoint Count</th><td>{{waypoint_count}}</td></tr>
+    <tr><th>Track Count</th><td>{{track_count}}</td></tr>
+  </table>
+</body>
+</html>

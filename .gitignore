@@ -1,0 +1,15 @@
+# Large local tile dataset (do not push to GitHub)
+hillshade_tiles/
+contours_high.geojson
+
+# Local runtime data
+data/app-data.json
+
+# Logs and temp artifacts
+*.log
+push.log
+
+# Environment files
+.env
+.env.*
+!.env.production.example

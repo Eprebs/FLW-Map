@@ -1,0 +1,2916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HuntAO</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="Circle.svg" type="image/svg+xml" />
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <!-- Leaflet Routing Machine CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"
+  />
+
+  <style>
+    :root {
+      --ink: #111111;
+      --panel: #161616;
+      --panel-strong: rgba(17, 17, 17, 0.96);
+      --panel-overlay: rgba(17, 17, 17, 0.92);
+      --text: #f5f2e9;
+      --muted: #b7b2a3;
+      --gold: #a68b2f;
+      --gold-strong: #c8ad3c;
+      --border: #2a2a2a;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--ink);
+      color: var(--text);
+    }
+
+    #map {
+      height: 100%;
+      width: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Drawer */
+    #drawerToggle {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1001;
+      background: var(--panel-overlay);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    #drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 280px;
+      max-width: 80%;
+      height: 100%;
+      background: var(--panel-strong);
+      color: var(--text);
+      z-index: 1000;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease-out;
+      padding: 12px 12px 40px 12px;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+
+    #drawer.open {
+      transform: translateX(0);
+    }
+
+    #drawer h2 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+    }
+
+    #drawer h3 {
+      margin: 16px 0 6px 0;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+
+    .drawer-section {
+      margin-bottom: 16px;
+    }
+
+    .drawer-btn {
+      width: 100%;
+      padding: 8px;
+      margin: 6px 0;
+      background: var(--gold);
+      color: #111111;
+      border: 1px solid #6b5a20;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .drawer-btn:hover {
+      background: var(--gold-strong);
+    }
+
+    .drawer-btn.active {
+      background: var(--gold-strong);
+      border-color: #8b7e3c;
+      box-shadow: inset 0 0 6px rgba(0,0,0,0.4);
+    }
+
+    .drawer-label {
+      display: block;
+      margin: 6px 0;
+      font-size: 13px;
+    }
+
+    .drawer-label input[type="checkbox"],
+    .drawer-label input[type="radio"] {
+      margin-right: 6px;
+    }
+
+    .drawer-info {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    select, input[type="number"], input[type="text"] {
+      width: 100%;
+      padding: 4px;
+      margin-top: 4px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+
+    /* HUD bottom-right */
+    #hud {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      z-index: 1001;
+      background: var(--panel-overlay);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      max-width: 260px;
+    }
+
+    #hud div {
+      margin: 2px 0;
+    }
+
+    /* Top-right controls */
+    #topRightControls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1001;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .control-btn {
+      background: var(--panel-overlay);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .control-btn.active {
+      background: var(--gold);
+      color: #111111;
+    }
+
+    /* Offline indicator */
+    #offlineIndicator {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      z-index: 1001;
+      background: var(--panel-overlay);
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      display: none;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+
+    .modal {
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px;
+      max-width: 360px;
+      width: 90%;
+      color: var(--text);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      font-size: 14px;
+    }
+
+    .modal h3 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .modal-buttons {
+      margin-top: 12px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .modal-btn {
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .modal-btn.primary {
+      background: var(--gold);
+      color: #111111;
+    }
+
+    .modal-btn.secondary {
+      background: #2a2a2a;
+      color: var(--text);
+    }
+
+    /* Activity Forecast Modal */
+    #activityModal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      z-index: 2000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #activityModal.open {
+      display: flex;
+    }
+
+    #activityPanel {
+      background: var(--panel-strong);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 420px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    #activityPanel h3 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      color: var(--gold-strong);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #activityPanel .close-btn {
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 20px;
+      padding: 0;
+      line-height: 1;
+    }
+
+    #activityPanel .close-btn:hover {
+      color: var(--gold);
+    }
+
+    #activityPanel .forecast-section {
+      margin: 16px 0;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 6px;
+      border-left: 4px solid var(--gold);
+    }
+
+    #activityPanel .forecast-section h4 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--gold);
+    }
+
+    #activityPanel .forecast-item {
+      margin: 8px 0;
+      padding: 8px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+      border-left: 2px solid var(--gold-strong);
+    }
+
+    #activityPanel .forecast-item p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    #activityPanel .activity-level {
+      font-size: 14px;
+      font-weight: bold;
+      color: var(--gold-strong);
+      margin: 12px 0;
+    }
+
+    #activityPanel .tip {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+
+    #weatherModal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      z-index: 2000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #weatherModal.open {
+      display: flex;
+    }
+
+    #weatherPanel {
+      background: var(--panel-strong);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 400px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    #weatherPanel h3 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      color: var(--gold-strong);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #weatherPanel .close-btn {
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 20px;
+      padding: 0;
+      line-height: 1;
+    }
+
+    #weatherPanel .close-btn:hover {
+      color: var(--gold);
+    }
+
+    #weatherPanel .weather-section {
+      margin: 16px 0;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 6px;
+      border-left: 4px solid var(--gold);
+    }
+
+    #weatherPanel .weather-section h4 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--gold);
+    }
+
+    #weatherPanel .weather-item {
+      display: flex;
+      justify-content: space-between;
+      margin: 6px 0;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    #weatherPanel .weather-item strong {
+      color: var(--gold-strong);
+      flex: 0 0 auto;
+    }
+
+    #weatherPanel .weather-item span {
+      flex: 1;
+      text-align: right;
+    }
+
+    #weatherPanel .last-updated {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 16px;
+      text-align: center;
+    }
+
+    #weatherPanel .loading {
+      text-align: center;
+      color: var(--muted);
+      padding: 20px;
+    }
+
+    /* Area legend */
+    #areaLegend {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1001;
+      background: var(--panel-overlay);
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    /* Leaflet popups */
+    .leaflet-popup-content-wrapper {
+      background: var(--panel) !important;
+      color: var(--text) !important;
+      border: 1px solid var(--gold) !important;
+      border-radius: 8px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+    }
+
+    .leaflet-popup-tip {
+      background: var(--panel) !important;
+      border: 1px solid var(--gold) !important;
+    }
+
+    .leaflet-popup-content {
+      margin: 10px 12px;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    .leaflet-popup-content strong {
+      color: var(--gold-strong);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid #111827;
+    }
+
+    .legend-swatch.hatch {
+      background-image: repeating-linear-gradient(
+        45deg,
+        rgba(249, 115, 22, 0.8),
+        rgba(249, 115, 22, 0.8) 2px,
+        transparent 2px,
+        transparent 4px
+      );
+      background-color: transparent;
+    }
+
+    .legend-swatch.dots {
+      background-image: radial-gradient(circle, rgba(59, 130, 246, 0.9) 1px, transparent 1px);
+      background-size: 6px 6px;
+      background-color: transparent;
+    }
+
+    /* Small screens */
+    @media (max-width: 600px) {
+      #hud {
+        max-width: 200px;
+        font-size: 11px;
+      }
+      #aiPanel {
+        top: 80px;
+        max-width: 220px;
+      }
+      #areaLegend {
+        font-size: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <button id="drawerToggle">☰</button>
+
+  <div id="drawer">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px; margin-left: 40px;">
+      <img src="Logo2.png" alt="HuntAO" style="max-width: 120px; height: auto;">
+    </div>
+
+    <h3>Layers</h3>
+    <div class="drawer-section">
+      <label class="drawer-label">
+        <input type="radio" name="basemap" value="satellite" checked>
+        Satellite (ESRI)
+      </label>
+      <label class="drawer-label">
+        <input type="radio" name="basemap" value="osm">
+        Streets (OSM)
+      </label>
+      <label class="drawer-label">
+        <input type="radio" name="basemap" value="usgs">
+        USGS Topo
+      </label>
+      <label class="drawer-label">
+        <input type="radio" name="basemap" value="esri">
+        ESRI Topo
+      </label>
+      <label class="drawer-label">
+        <input type="radio" name="basemap" value="otm">
+        OpenTopoMap
+      </label>
+    </div>
+
+    <h3>Terrain Overlays</h3>
+    <div class="drawer-section">
+      <label class="drawer-label">
+        <input type="checkbox" id="contoursToggle">
+        Contours
+      </label>
+      <label class="drawer-label">
+        <input type="checkbox" id="hillshadeToggle">
+        Hillshade
+      </label>
+    </div>
+
+    <h3>Offline Maps</h3>
+    <div class="drawer-section">
+      <button id="downloadOfflineBtn" class="drawer-btn">
+        Download Offline Area
+      </button>
+
+      <button id="manageOfflineBtn" class="drawer-btn">
+        Manage Offline Packs
+      </button>
+
+      <label class="drawer-label">
+        <input type="checkbox" id="includeSatelliteToggle">
+        Include Satellite Tiles
+      </label>
+
+      <label class="drawer-label">
+        Zoom Levels:
+        <select id="offlineZoomSelect">
+          <option value="12-16">12–16 (Fast, small)</option>
+          <option value="12-17" selected>12–17 (Recommended)</option>
+          <option value="13-17">13–17 (High detail)</option>
+        </select>
+      </label>
+
+      <div id="offlineStorageUsage" class="drawer-info">
+        Storage Used: calculating…
+      </div>
+    </div>
+
+    <h3>Tools</h3>
+    <div class="drawer-section">
+      <button id="gpsFollowBtn" class="drawer-btn">GPS Follow</button>
+      <button id="addWaypointBtn" class="drawer-btn">Add Waypoint</button>
+      <button id="startTrackBtn" class="drawer-btn">Start Track</button>
+      <button id="measureBtn" class="drawer-btn">Measure Distance</button>
+      <button id="routingBtn" class="drawer-btn">Routing</button>
+      <button id="clearRoutesBtn" class="drawer-btn">Clear Routes/Tracks</button>
+    </div>
+
+    <h3>Account & Sync</h3>
+    <div class="drawer-section">
+      <div id="authStatus" class="drawer-info" style="margin-bottom: 8px;">Not signed in</div>
+      <div id="syncStatus" class="drawer-info" style="margin-bottom: 8px;">Sync status: idle</div>
+      <button id="openAccountModalBtn" class="drawer-btn">Open Account & Sync</button>
+    </div>
+
+    <h3>Status & Info</h3>
+    <div class="drawer-section">
+      <button id="refreshStatusBtn" class="drawer-btn">Refresh Area Status</button>
+      <div id="statusSummary" class="drawer-info">
+        Status: not loaded yet.
+      </div>
+      <div id="statusCounts" class="drawer-info">
+        Open: --, Closed: --, Signed in: --
+      </div>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div id="hudLocation">Lat: ---, Lng: ---</div>
+    <div id="hudAccuracy">Accuracy: ---</div>
+    <div id="hudCurrentArea">Area: ---</div>
+    <div id="hudTime">Time: ---</div>
+    <div id="hudWeather">Weather: loading…</div>
+  </div>
+
+  <div id="topRightControls">
+    <button id="stealthModeBtn" class="control-btn">Stealth</button>
+    <button id="weatherBtn" class="control-btn">Weather</button>
+    <button id="activityForecastBtn" class="control-btn">Activity</button>
+    <button id="reportProblemBtn" class="control-btn">Report Problem</button>
+  </div>
+
+  <div id="offlineIndicator">📦 Offline Map Available</div>
+
+  <div id="activityModal">
+    <div id="activityPanel">
+      <h3>
+        Deer Activity Forecast
+        <button class="close-btn" id="activityPanelClose">✕</button>
+      </h3>
+      <div id="activityContent">
+        <div style="text-align: center; color: var(--muted); padding: 20px;">Open weather first to generate forecast</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="weatherModal">
+    <div id="weatherPanel">
+      <h3>
+        Local Weather
+        <button class="close-btn" id="weatherPanelClose">✕</button>
+      </h3>
+      <div id="weatherContent">
+        <div class="loading">Fetching weather data...</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="reportProblemModal" style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; z-index: 2100; align-items: center; justify-content: center;">
+    <div style="background: var(--panel-strong); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 92%; max-width: 520px;">
+      <h3 style="margin: 0 0 12px 0; color: var(--gold-strong);">Report a Problem</h3>
+      <label style="display:block; font-size: 13px; color: var(--muted); margin-bottom: 6px;">Your Email (optional)</label>
+      <input id="reportContactEmail" type="text" placeholder="you@example.com" style="width:100%; padding:8px; margin-bottom:10px; border-radius:4px; border:1px solid var(--border); background: var(--panel); color: var(--text); box-sizing: border-box;" />
+      <label style="display:block; font-size: 13px; color: var(--muted); margin-bottom: 6px;">What happened?</label>
+      <textarea id="reportMessage" rows="6" placeholder="Describe the bug, what you expected, and what happened..." style="width:100%; padding:8px; border-radius:4px; border:1px solid var(--border); background: var(--panel); color: var(--text); box-sizing: border-box; resize: vertical;"></textarea>
+      <div style="display:flex; gap:8px; margin-top: 12px;">
+        <button id="cancelReportBtn" class="modal-btn secondary" style="flex:1;">Cancel</button>
+        <button id="submitReportBtn" class="modal-btn primary" style="flex:1;">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="accountModalBackdrop" class="modal-backdrop">
+    <div class="modal" style="max-width: 460px; max-height: 80vh; overflow-y: auto;">
+      <h3 style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        Account & Sync
+        <button id="accountModalClose" class="modal-btn secondary" style="padding: 4px 8px;">✕</button>
+      </h3>
+
+      <label class="drawer-label">
+        Email
+        <input id="authEmailInput" type="text" placeholder="you@example.com" autocomplete="email">
+      </label>
+
+      <label class="drawer-label">
+        Password
+        <input id="authPasswordInput" type="password" placeholder="At least 8 characters" autocomplete="current-password">
+      </label>
+
+      <div style="display: flex; gap: 8px;">
+        <button id="requestVerifyBtn" class="drawer-btn" style="flex: 1;">Send Verify Email</button>
+        <button id="requestResetBtn" class="drawer-btn" style="flex: 1;">Forgot Password</button>
+      </div>
+
+      <label class="drawer-label">
+        Reset Token
+        <input id="resetTokenInput" type="text" placeholder="Paste reset token from email link">
+      </label>
+
+      <label class="drawer-label">
+        New Password
+        <input id="newPasswordInput" type="password" placeholder="Set new password">
+      </label>
+      <button id="resetPasswordBtn" class="drawer-btn">Reset Password</button>
+
+      <label class="drawer-label">
+        Full Name
+        <input id="profileFullName" type="text" placeholder="Optional for account + tracking doc">
+      </label>
+
+      <div style="display: flex; gap: 8px;">
+        <button id="signupBtn" class="drawer-btn" style="flex: 1;">Create Account</button>
+        <button id="loginBtn" class="drawer-btn" style="flex: 1;">Login</button>
+      </div>
+      <button id="logoutBtn" class="drawer-btn">Logout</button>
+
+      <label class="drawer-label">
+        Phone
+        <input id="profilePhone" type="text" placeholder="Phone number">
+      </label>
+      <label class="drawer-label">
+        Vehicle
+        <input id="profileVehicle" type="text" placeholder="Vehicle / plate">
+      </label>
+      <label class="drawer-label">
+        Emergency Contact
+        <input id="profileEmergencyContact" type="text" placeholder="Name + phone">
+      </label>
+      <label class="drawer-label">
+        Tracking Notes
+        <input id="profileNotes" type="text" placeholder="Optional notes">
+      </label>
+
+      <button id="syncNowBtn" class="drawer-btn">Sync Now</button>
+    </div>
+  </div>
+
+  <div id="offlineDownloadModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; z-index: 2000; justify-content: center; align-items: center;">
+    <div style="background: var(--panel-strong); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 20px; max-width: 400px; width: 90%;">
+      <h3 style="margin: 0 0 16px 0; color: var(--gold-strong);">Download Offline Maps</h3>
+      <label style="display: block; margin: 12px 0; font-size: 13px;">
+        <strong>Zoom Level:</strong>
+        <select id="offlineZoomLevelSelect" style="width: 100%; padding: 6px; margin-top: 4px; border-radius: 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text);">
+          <option value="15">Zoom 15 (High detail, ~100MB)</option>
+          <option value="14">Zoom 14 (Balanced, ~25MB)</option>
+          <option value="13">Zoom 13 (Lower detail, ~6MB)</option>
+          <option value="12">Zoom 12 (Minimal, ~2MB)</option>
+        </select>
+      </label>
+      <label style="display: block; margin: 12px 0; font-size: 13px;">
+        <input type="checkbox" id="downloadSatCheckbox" checked> Include Satellite Imagery
+      </label>
+      <div id="downloadProgress" style="display: none; margin: 12px 0;">
+        <div style="font-size: 12px; margin-bottom: 6px;">Downloading: <span id="downloadStatus">0/0</span></div>
+        <div style="width: 100%; height: 20px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden;">
+          <div id="downloadProgressBar" style="width: 0%; height: 100%; background: var(--gold-strong); transition: width 0.2s;"></div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button onclick="document.getElementById('offlineDownloadModal').style.display='none'" class="modal-btn secondary" style="flex: 1;">Cancel</button>
+        <button id="startDownloadBtn" class="modal-btn primary" style="flex: 1;">Start Download</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="offlineManageModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; z-index: 2000; justify-content: center; align-items: center;">
+    <div style="background: var(--panel-strong); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 20px; max-width: 450px; width: 90%; max-height: 80vh; overflow-y: auto;">
+      <h3 style="margin: 0 0 16px 0; color: var(--gold-strong);">Manage Offline Packs</h3>
+      <div id="storageUsageContainer">
+        <p style="font-size: 12px; color: var(--muted); margin: 8px 0;">
+          Storage Used: <strong id="storageSizeDisplay">0 MB</strong> / 5 GB
+        </p>
+        <div style="width: 100%; height: 12px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; margin-bottom: 16px;">
+          <div id="storageBar" style="width: 0%; height: 100%; background: var(--gold-strong);"></div>
+        </div>
+      </div>
+      <div id="packsList" style="max-height: 400px; overflow-y: auto;">
+        <p style="font-size: 12px; color: var(--muted); text-align: center; padding: 20px;">Loading packs...</p>
+      </div>
+      <button onclick="document.getElementById('offlineManageModal').style.display='none'" class="modal-btn primary" style="width: 100%; margin-top: 16px;">Close</button>
+    </div>
+  </div>
+
+  <div id="areaLegend">
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#16a34a;"></div>
+      <span>Open</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background:#dc2626;"></div>
+      <span>Closed</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch hatch"></div>
+      <span>Archery</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch dots"></div>
+      <span>Cantonment</span>
+    </div>
+  </div>
+
+  <!-- Modal for offline packs, confirmations, etc. -->
+  <div id="modalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <h3 id="modalTitle">Title</h3>
+      <div id="modalBody">Body</div>
+      <div class="modal-buttons">
+        <button id="modalCancel" class="modal-btn secondary">Cancel</button>
+        <button id="modalConfirm" class="modal-btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <!-- Leaflet Pattern Plugin (FIX for hatch + dots) -->
+  <script src="https://unpkg.com/leaflet.pattern@0.1.0/dist/leaflet.pattern.js"></script>
+
+  <!-- Leaflet Routing Machine -->
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+  <script>
+    // -----------------------------
+    // Basic map setup
+    // -----------------------------
+    const map = L.map("map", {
+      center: [37.75, -92.15],
+      zoom: 12,
+      zoomControl: false
+    });
+
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+
+    // Basemaps
+    const satellite = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: "ESRI World Imagery" }
+    );
+
+    const osm = L.tileLayer(
+      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }
+    );
+
+    const usgsTopo = L.tileLayer(
+      "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 16, attribution: "USGS" }
+    );
+
+    const esriTopo = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: "ESRI" }
+    );
+
+    const otmTopo = L.tileLayer(
+      "https://tile.opentopomap.org/{z}/{x}/{y}.png",
+      { maxZoom: 17, attribution: "OpenTopoMap" }
+    );
+
+    satellite.addTo(map);
+
+    // Overlays: Vector-based contour lines (OnX style)
+    // Load different contour datasets based on zoom level
+    let contoursLowData = null;
+    let contoursMedData = null;
+    let contoursHighData = null;
+    let contoursLowLayer = null;
+    let contoursMedLayer = null;
+    let contoursHighLayer = null;
+    let currentContoursLayer = null;
+
+    // Cache loaded GeoJSON to avoid re-downloading
+    async function loadContoursData() {
+      try {
+        contoursMedData = await fetch('/contours_med.geojson').then(r => {
+          if (!r.ok) throw new Error(`Failed to load med: ${r.status}`);
+          return r.json();
+        });
+      } catch (err) {
+        console.error('Failed to load medium contours:', err);
+      }
+
+      try {
+        contoursHighData = await fetch('/contours_high.geojson').then(r => {
+          if (!r.ok) throw new Error(`Failed to load high: ${r.status}`);
+          return r.json();
+        });
+      } catch (err) {
+        contoursHighData = null;
+        console.warn('High-resolution contours unavailable; using medium contours only.');
+      }
+    }
+
+    // Style contour lines - dark yellow like OnX
+    function getContoursStyle(zoom) {
+      const weight = zoom >= 16 ? 1 : zoom >= 13 ? 0.7 : 0.5;
+      return {
+        color: '#c9a227',
+        weight: weight,
+        opacity: 0.5,
+        lineCap: 'round',
+        lineJoin: 'round'
+      };
+    }
+
+    // Create layer for a specific zoom level
+    function createContoursLayer(data, zoom) {
+      if (!data || !data.features || data.features.length === 0) {
+        console.warn('No contour data available');
+        return null;
+      }
+      
+      const style = getContoursStyle(zoom);
+      
+      // Simplify geometry for better performance - reduce coordinate density
+      const simplificationFactor = zoom >= 16 ? 0 : zoom >= 13 ? 1 : 2;
+      
+      const simplifyGeometry = (feature) => {
+        if (simplificationFactor === 0) return feature;
+        
+        if (feature.geometry.type === 'LineString') {
+          const coords = feature.geometry.coordinates;
+          const simplified = coords.filter((c, i) => i % (simplificationFactor + 1) === 0);
+          return {
+            ...feature,
+            geometry: { ...feature.geometry, coordinates: simplified }
+          };
+        }
+        return feature;
+      };
+      
+      const simplifiedData = {
+        ...data,
+        features: data.features.map(simplifyGeometry)
+      };
+      
+      // Use SVG renderer for better compatibility
+      return L.geoJSON(simplifiedData, {
+        style: () => style,
+        interactive: false
+      });
+    }
+
+    // Update contours based on zoom level
+    function updateContours() {
+      if (!contoursActive) return;
+      
+      const zoom = map.getZoom();
+      
+      // Remove current layer if it exists
+      if (currentContoursLayer) {
+        map.removeLayer(currentContoursLayer);
+        currentContoursLayer = null;
+      }
+
+      // Add appropriate layer based on zoom
+      if (zoom >= 16 && contoursHighData) {
+        currentContoursLayer = createContoursLayer(contoursHighData, zoom);
+        if (currentContoursLayer) currentContoursLayer.addTo(map);
+      } else if (zoom >= 10 && contoursMedData) {
+        currentContoursLayer = createContoursLayer(contoursMedData, zoom);
+        if (currentContoursLayer) currentContoursLayer.addTo(map);
+      }
+    }
+
+    // Load contours data on map init
+    loadContoursData().then(() => {
+      updateContours();
+    });
+
+    // Update contours when zoom changes
+    map.on('zoomend', updateContours);
+
+    // Hillshade via local XYZ tiles (colored terrain)
+    const hillshadeLayer = L.tileLayer(
+      "./hillshade_tiles/{z}/{x}/{y}.png",
+      {
+        maxZoom: 17,
+        opacity: 0.4,
+        attribution: "Local Hillshade",
+        className: "hillshade-layer"
+      }
+    );
+
+    // Track which overlays are active
+    let contoursActive = false;
+    let hillshadeActive = false;
+
+    // Terrain overlays
+    const contoursToggle = document.getElementById("contoursToggle");
+    const hillshadeToggle = document.getElementById("hillshadeToggle");
+
+    contoursToggle.addEventListener("change", () => {
+      if (contoursToggle.checked && !contoursActive) {
+        contoursActive = true;
+        updateContours();
+      } else if (!contoursToggle.checked && contoursActive) {
+        contoursActive = false;
+        if (currentContoursLayer) {
+          map.removeLayer(currentContoursLayer);
+          currentContoursLayer = null;
+        }
+      }
+    });
+
+    hillshadeToggle.addEventListener("change", () => {
+      if (hillshadeToggle.checked && !hillshadeActive) {
+        hillshadeLayer.addTo(map);
+        hillshadeActive = true;
+      } else if (!hillshadeToggle.checked && hillshadeActive) {
+        map.removeLayer(hillshadeLayer);
+        hillshadeActive = false;
+      }
+    });
+
+    // -----------------------------
+    // Drawer logic
+    // -----------------------------
+    const drawer = document.getElementById("drawer");
+    const drawerToggle = document.getElementById("drawerToggle");
+
+    drawerToggle.addEventListener("click", () => {
+      drawer.classList.toggle("open");
+    });
+
+    document.querySelectorAll('input[name="basemap"]').forEach(radio => {
+      radio.addEventListener("change", () => setBasemap(radio.value));
+    });
+
+    function setBasemap(value) {
+      [satellite, osm, usgsTopo, esriTopo, otmTopo].forEach(l => map.removeLayer(l));
+      switch (value) {
+        case "satellite": satellite.addTo(map); break;
+        case "osm": osm.addTo(map); break;
+        case "usgs": usgsTopo.addTo(map); break;
+        case "esri": esriTopo.addTo(map); break;
+        case "otm": otmTopo.addTo(map); break;
+      }
+    }
+
+    // -----------------------------
+    // HUD + GPS
+    // -----------------------------
+    const hudLocation = document.getElementById("hudLocation");
+    const hudAccuracy = document.getElementById("hudAccuracy");
+    const hudCurrentArea = document.getElementById("hudCurrentArea");
+    const hudTime = document.getElementById("hudTime");
+    const hudWeather = document.getElementById("hudWeather");
+
+    let areaFeatures = []; // Store loaded area features for point-in-polygon
+
+    // Point-in-polygon algorithm (ray casting)
+    function isPointInPolygon(point, polygon) {
+      const [x, y] = point;
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i][0], yi = polygon[i][1];
+        const xj = polygon[j][0], yj = polygon[j][1];
+        const intersect = ((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function getCurrentArea(lat, lng) {
+      for (const feature of areaFeatures) {
+        const geom = feature.geometry;
+        if (geom.type === "Polygon") {
+          const coords = geom.coordinates[0];
+          const ring = coords.map(coord => [coord[0], coord[1]]);
+          if (isPointInPolygon([lng, lat], ring)) {
+            return feature.properties.area_name || "Unknown Area";
+          }
+        } else if (geom.type === "MultiPolygon") {
+          for (const polygon of geom.coordinates) {
+            const ring = polygon[0].map(coord => [coord[0], coord[1]]);
+            if (isPointInPolygon([lng, lat], ring)) {
+              return feature.properties.area_name || "Unknown Area";
+            }
+          }
+        }
+      }
+      return "Outside Known Areas";
+    }
+
+    let gpsWatchId = null;
+    let gpsFollow = false;
+    let currentPosition = null;
+    let lastWeatherData = null;
+    let currentWind = { speed: 0, direction: 0, angle: 0 };
+
+    function updateTime() {
+      const now = new Date();
+      hudTime.textContent = "Time: " + now.toLocaleTimeString();
+    }
+    setInterval(updateTime, 1000);
+    updateTime();
+
+    function startGPS() {
+      if (!navigator.geolocation) return;
+      if (gpsWatchId !== null) return;
+
+      gpsWatchId = navigator.geolocation.watchPosition(
+        pos => {
+          const { latitude, longitude, accuracy, speed, heading } = pos.coords;
+          currentPosition = [latitude, longitude];
+
+          hudLocation.textContent = `Lat: ${latitude.toFixed(5)}, Lng: ${longitude.toFixed(5)}`;
+          hudAccuracy.textContent = `Accuracy: ${accuracy ? accuracy.toFixed(0) + " m" : "---"}`;
+          hudCurrentArea.textContent = `Area: ${getCurrentArea(latitude, longitude)}`;
+
+          if (gpsFollow) map.setView(currentPosition, Math.max(map.getZoom(), 15));
+        },
+        err => console.warn("GPS error:", err),
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+      );
+    }
+    startGPS();
+
+    const gpsFollowBtn = document.getElementById("gpsFollowBtn");
+    gpsFollowBtn.addEventListener("click", () => {
+      gpsFollow = !gpsFollow;
+      gpsFollowBtn.classList.toggle("active", gpsFollow);
+      if (gpsFollow && currentPosition) map.setView(currentPosition, Math.max(map.getZoom(), 15));
+    });
+
+    // HUD weather (real data)
+    async function updateWeather() {
+      if (!lastWeatherData) {
+        hudWeather.textContent = "Weather: loading...";
+        try {
+          await fetchWeather();
+        } catch (err) {
+          console.warn("HUD weather fetch failed:", err);
+        }
+      }
+
+      if (!lastWeatherData) return;
+
+      const tempF = (lastWeatherData.temperature_2m * 9 / 5 + 32).toFixed(1);
+      const windMph = (currentWind.speed * 0.621371).toFixed(1);
+      const windDir = getWindDirection(currentWind.direction);
+      hudWeather.textContent = `Weather: ${tempF}°F, Wind ${windMph} mph ${windDir}`;
+    }
+    updateWeather();
+    setInterval(updateWeather, 10 * 60 * 1000);
+
+    // -----------------------------
+    // Account + Sync
+    // -----------------------------
+    const authStatus = document.getElementById("authStatus");
+    const syncStatus = document.getElementById("syncStatus");
+    const openAccountModalBtn = document.getElementById("openAccountModalBtn");
+    const accountModalBackdrop = document.getElementById("accountModalBackdrop");
+    const accountModalClose = document.getElementById("accountModalClose");
+    const authEmailInput = document.getElementById("authEmailInput");
+    const authPasswordInput = document.getElementById("authPasswordInput");
+    const requestVerifyBtn = document.getElementById("requestVerifyBtn");
+    const requestResetBtn = document.getElementById("requestResetBtn");
+    const resetTokenInput = document.getElementById("resetTokenInput");
+    const newPasswordInput = document.getElementById("newPasswordInput");
+    const resetPasswordBtn = document.getElementById("resetPasswordBtn");
+    const signupBtn = document.getElementById("signupBtn");
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const syncNowBtn = document.getElementById("syncNowBtn");
+    const profileFullName = document.getElementById("profileFullName");
+    const profilePhone = document.getElementById("profilePhone");
+    const profileVehicle = document.getElementById("profileVehicle");
+    const profileEmergencyContact = document.getElementById("profileEmergencyContact");
+    const profileNotes = document.getElementById("profileNotes");
+
+    const AUTH_TOKEN_KEY = "huntao_auth_token";
+    let authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
+    let currentUser = null;
+    let syncSaveTimer = null;
+
+    function setSyncStatus(text) {
+      syncStatus.textContent = `Sync status: ${text}`;
+    }
+
+    function setAuthUi() {
+      if (currentUser) {
+        const verified = currentUser.emailVerified === false ? " (unverified)" : "";
+        authStatus.textContent = `Signed in: ${currentUser.email}${verified}`;
+      } else {
+        authStatus.textContent = "Not signed in";
+      }
+    }
+
+    openAccountModalBtn.addEventListener("click", () => {
+      accountModalBackdrop.style.display = "flex";
+    });
+
+    accountModalClose.addEventListener("click", () => {
+      accountModalBackdrop.style.display = "none";
+    });
+
+    accountModalBackdrop.addEventListener("click", e => {
+      if (e.target === accountModalBackdrop) {
+        accountModalBackdrop.style.display = "none";
+      }
+    });
+
+    function getProfilePayload() {
+      return {
+        fullName: profileFullName.value.trim(),
+        phone: profilePhone.value.trim(),
+        vehicle: profileVehicle.value.trim(),
+        emergencyContact: profileEmergencyContact.value.trim(),
+        notes: profileNotes.value.trim()
+      };
+    }
+
+    function setProfileFields(profile = {}) {
+      profileFullName.value = profile.fullName || "";
+      profilePhone.value = profile.phone || "";
+      profileVehicle.value = profile.vehicle || "";
+      profileEmergencyContact.value = profile.emergencyContact || "";
+      profileNotes.value = profile.notes || "";
+    }
+
+    async function apiFetch(pathname, options = {}) {
+      const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+      const response = await fetch(pathname, { ...options, headers });
+      const contentType = response.headers.get("content-type") || "";
+      const payload = contentType.includes("application/json") ? await response.json() : null;
+      if (!response.ok) {
+        throw new Error(payload?.error || `Request failed: ${response.status}`);
+      }
+      return payload;
+    }
+
+    async function pushSyncNow() {
+      if (!authToken || !currentUser) return;
+      setSyncStatus("uploading...");
+      await apiFetch("/api/sync", {
+        method: "PUT",
+        body: JSON.stringify({
+          waypoints: waypointRecords,
+          tracks: savedTracks,
+          profile: getProfilePayload()
+        })
+      });
+      setSyncStatus(`synced ${new Date().toLocaleTimeString()}`);
+    }
+
+    function queueSyncSave() {
+      if (!authToken || !currentUser) return;
+      setSyncStatus("pending changes...");
+      clearTimeout(syncSaveTimer);
+      syncSaveTimer = setTimeout(async () => {
+        try {
+          await pushSyncNow();
+        } catch (err) {
+          console.warn("Sync save failed", err);
+          setSyncStatus("sync failed");
+        }
+      }, 1200);
+    }
+
+    async function loadCloudSync() {
+      if (!authToken || !currentUser) return;
+      setSyncStatus("loading from cloud...");
+      const synced = await apiFetch("/api/sync", { method: "GET" });
+      waypointRecords = Array.isArray(synced.waypoints) ? synced.waypoints : [];
+      savedTracks = Array.isArray(synced.tracks) ? synced.tracks : [];
+      setProfileFields(synced.profile || {});
+      renderAllWaypoints();
+      renderSavedTracks();
+      setSyncStatus(`loaded ${new Date().toLocaleTimeString()}`);
+    }
+
+    async function initializeAuthFromToken() {
+      if (!authToken) {
+        setAuthUi();
+        return;
+      }
+      try {
+        const data = await apiFetch("/api/auth/me", { method: "GET" });
+        currentUser = data.user;
+        setAuthUi();
+        await loadCloudSync();
+      } catch {
+        authToken = "";
+        currentUser = null;
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        setAuthUi();
+        setSyncStatus("idle");
+      }
+    }
+
+    function prefillResetFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const resetToken = params.get("resetToken");
+      const email = params.get("email");
+      if (resetToken) {
+        resetTokenInput.value = resetToken;
+      }
+      if (email) {
+        authEmailInput.value = email;
+      }
+      if (resetToken || email) {
+        accountModalBackdrop.style.display = "flex";
+        setSyncStatus("Password reset link loaded. Enter a new password and click Reset Password.");
+      }
+    }
+
+    signupBtn.addEventListener("click", async () => {
+      try {
+        const email = authEmailInput.value.trim();
+        const password = authPasswordInput.value;
+        const fullName = profileFullName.value.trim();
+        const data = await apiFetch("/api/auth/signup", {
+          method: "POST",
+          body: JSON.stringify({ email, password, fullName })
+        });
+        authToken = data.token;
+        currentUser = data.user;
+        localStorage.setItem(AUTH_TOKEN_KEY, authToken);
+        setAuthUi();
+        await pushSyncNow();
+        if (data.verificationRequired) {
+          alert("Account created. Check your email to verify before login on other devices.");
+          if (data.verificationLink) {
+            console.info("Dev verification link:", data.verificationLink);
+          }
+        } else {
+          alert("Account created and signed in.");
+        }
+      } catch (err) {
+        alert(`Signup failed: ${err.message}`);
+      }
+    });
+
+    loginBtn.addEventListener("click", async () => {
+      try {
+        const email = authEmailInput.value.trim();
+        const password = authPasswordInput.value;
+        const data = await apiFetch("/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ email, password })
+        });
+        authToken = data.token;
+        currentUser = data.user;
+        localStorage.setItem(AUTH_TOKEN_KEY, authToken);
+        setAuthUi();
+        await loadCloudSync();
+        alert("Logged in and synced.");
+      } catch (err) {
+        alert(`Login failed: ${err.message}`);
+      }
+    });
+
+    requestVerifyBtn.addEventListener("click", async () => {
+      try {
+        const email = authEmailInput.value.trim();
+        const data = await apiFetch("/api/auth/request-verification", {
+          method: "POST",
+          body: JSON.stringify({ email })
+        });
+        if (data.verificationLink) {
+          console.info("Dev verification link:", data.verificationLink);
+        }
+        alert(data.message || "Verification email sent.");
+      } catch (err) {
+        alert(`Could not send verification email: ${err.message}`);
+      }
+    });
+
+    requestResetBtn.addEventListener("click", async () => {
+      try {
+        const email = authEmailInput.value.trim();
+        if (!email) {
+          alert("Enter your email first.");
+          return;
+        }
+        const data = await apiFetch("/api/auth/request-password-reset", {
+          method: "POST",
+          body: JSON.stringify({ email })
+        });
+        if (data.resetLink) {
+          console.info("Dev reset link:", data.resetLink);
+        }
+        alert(data.message || "If the email exists, reset instructions were sent.");
+      } catch (err) {
+        alert(`Could not request password reset: ${err.message}`);
+      }
+    });
+
+    resetPasswordBtn.addEventListener("click", async () => {
+      try {
+        const email = authEmailInput.value.trim();
+        const token = resetTokenInput.value.trim();
+        const newPassword = newPasswordInput.value;
+        const data = await apiFetch("/api/auth/reset-password", {
+          method: "POST",
+          body: JSON.stringify({ email, token, newPassword })
+        });
+        newPasswordInput.value = "";
+        resetTokenInput.value = "";
+        alert(data.message || "Password reset successful.");
+      } catch (err) {
+        alert(`Reset failed: ${err.message}`);
+      }
+    });
+
+    logoutBtn.addEventListener("click", () => {
+      authToken = "";
+      currentUser = null;
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      clearTimeout(syncSaveTimer);
+      authEmailInput.value = "";
+      authPasswordInput.value = "";
+      resetTokenInput.value = "";
+      newPasswordInput.value = "";
+      setProfileFields({});
+      setAuthUi();
+      setSyncStatus("idle");
+    });
+
+    syncNowBtn.addEventListener("click", async () => {
+      if (!authToken || !currentUser) {
+        alert("Sign in first to sync.");
+        return;
+      }
+      try {
+        await pushSyncNow();
+      } catch (err) {
+        alert(`Sync failed: ${err.message}`);
+      }
+    });
+
+    [profileFullName, profilePhone, profileVehicle, profileEmergencyContact, profileNotes].forEach(input => {
+      input.addEventListener("input", queueSyncSave);
+    });
+
+    setAuthUi();
+    setSyncStatus("idle");
+  prefillResetFromUrl();
+
+    // -----------------------------
+    // Waypoints & tracks (simple)
+
+    // Define waypoint types with custom SVG icons
+    const waypointTypes = {
+      'treestand': { 
+        color: '#a68b2f', 
+        label: 'Treestand',
+        svg: '<g><circle cx="16" cy="20" r="8" fill="#a68b2f" opacity="0.8"/><line x1="16" y1="8" x2="16" y2="32" stroke="#f5f2e9" stroke-width="2"/></g>' 
+      },
+      'blind': { 
+        color: '#5e5427', 
+        label: 'Ground Blind',
+        svg: '<g><rect x="10" y="12" width="12" height="14" fill="#5e5427" opacity="0.8"/><rect x="12" y="14" width="2" height="2" fill="#f5f2e9"/><rect x="18" y="14" width="2" height="2" fill="#f5f2e9"/></g>'
+      },
+      'waterhole': { 
+        color: '#9b8531', 
+        label: 'Water Hole',
+        svg: '<g><path d="M16 10 Q20 14 20 18 Q20 22 16 24 Q12 22 12 18 Q12 14 16 10" fill="#9b8531" opacity="0.8"/></g>'
+      },
+      'feedingarea': { 
+        color: '#7c7a2f', 
+        label: 'Feeding Area',
+        svg: '<g><circle cx="10" cy="14" r="2" fill="#f5f2e9"/><circle cx="16" cy="10" r="2" fill="#f5f2e9"/><circle cx="22" cy="14" r="2" fill="#f5f2e9"/><circle cx="14" cy="20" r="2" fill="#f5f2e9"/><circle cx="18" cy="20" r="2" fill="#f5f2e9"/></g>'
+      },
+      'beddingarea': { 
+        color: '#8b7c2f', 
+        label: 'Bedding Area',
+        svg: '<g><ellipse cx="16" cy="16" rx="7" ry="5" fill="#8b7c2f" opacity="0.8"/><path d="M13 18 Q13 22 16 24 Q19 22 19 18" fill="#8b7c2f" opacity="0.8"/></g>'
+      },
+      'signpost': { 
+        color: '#c8ad3c', 
+        label: 'Sign Post',
+        svg: '<g><rect x="15" y="8" width="2" height="16" fill="#f5f2e9"/><path d="M10 10 L22 10 L22 14 L10 14 Z" fill="#c8ad3c" opacity="0.8"/></g>'
+      },
+      'saltlick': { 
+        color: '#b08a38', 
+        label: 'Salt Lick',
+        svg: '<g><circle cx="12" cy="12" r="3" fill="#b08a38" opacity="0.8"/><circle cx="16" cy="14" r="3" fill="#b08a38" opacity="0.8"/><circle cx="20" cy="12" r="3" fill="#b08a38" opacity="0.8"/><circle cx="16" cy="18" r="3" fill="#b08a38" opacity="0.8"/></g>'
+      },
+      'generic': { 
+        color: '#a68b2f', 
+        label: 'Waypoint',
+        svg: '<g><circle cx="16" cy="14" r="5" fill="#a68b2f" opacity="0.8"/><circle cx="16" cy="14" r="2" fill="#f5f2e9"/></g>'
+      }
+    };
+
+    // Create icon for a specific waypoint type
+    function createWaypointIcon(type) {
+      const typeData = waypointTypes[type] || waypointTypes['generic'];
+      return L.divIcon({
+        html: `<svg width="32" height="40" viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0C9.37 0 4 5.37 4 12c0 8 12 26 12 26s12-18 12-26c0-6.63-5.37-12-12-12z" fill="${typeData.color}" stroke="#0f0f0f" stroke-width="1.5"/>
+          ${typeData.svg}
+        </svg>`,
+        iconSize: [32, 40],
+        iconAnchor: [16, 40],
+        popupAnchor: [0, -40],
+        className: 'waypoint-marker'
+      });
+    }
+
+    // Create wind direction arrow icon
+    function createWindArrowIcon() {
+      return L.divIcon({
+        html: `<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${(currentWind.angle + 180) % 360}deg);">
+          <path d="M 24 4 L 32 28 L 24 24 L 16 28 Z" fill="#c8ad3c" opacity="0.95" stroke="#111111" stroke-width="1"/>
+        </svg>`,
+        iconSize: [48, 48],
+        iconAnchor: [24, 24],
+        popupAnchor: [0, -20],
+        className: 'wind-arrow-icon'
+      });
+    }
+
+    const addWaypointBtn = document.getElementById("addWaypointBtn");
+    let waypointLayer = L.layerGroup().addTo(map);
+    let waypointRecords = [];
+    const waypointVisualsById = new Map();
+    let savedTracks = [];
+    let savedTrackLayers = [];
+
+    function escapeHtmlText(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function buildWaypointPopup(record) {
+      const windDir = getWindDirection(currentWind.angle || 0);
+      const windMph = ((currentWind.speed || 0) * 0.621371).toFixed(1);
+      const typeLabel = waypointTypes[record.type]?.label || waypointTypes.generic.label;
+      const displayName = escapeHtmlText(record.name || typeLabel);
+      return `<strong>${displayName}</strong><br><small>Lat: ${record.lat.toFixed(5)}, Lng: ${record.lng.toFixed(5)}</small><br><small style="color: var(--gold-strong);">Wind: ${windMph} mph ${windDir}</small><br><small style="color: var(--muted);">Drag to move<br>Right-click to delete</small>`;
+    }
+
+    function removeWaypointById(id, shouldSync = true) {
+      const visuals = waypointVisualsById.get(id);
+      if (visuals) {
+        if (visuals.marker) waypointLayer.removeLayer(visuals.marker);
+        if (visuals.windArrow) waypointLayer.removeLayer(visuals.windArrow);
+        waypointVisualsById.delete(id);
+      }
+      waypointRecords = waypointRecords.filter(wp => wp.id !== id);
+      if (shouldSync) queueSyncSave();
+    }
+
+    function addWaypointRecord(record, openPopup = false) {
+      const latlng = L.latLng(record.lat, record.lng);
+      const marker = L.marker(latlng, { draggable: true, icon: createWaypointIcon(record.type) }).addTo(waypointLayer);
+      const windArrow = L.marker(latlng, { icon: createWindArrowIcon() }).addTo(waypointLayer);
+
+      marker.bindPopup(buildWaypointPopup(record));
+      if (openPopup) marker.openPopup();
+      marker.wayPointType = record.type;
+      marker.customName = record.name || "";
+      marker.windArrow = windArrow;
+
+      marker.on("dragend", () => {
+        const next = marker.getLatLng();
+        record.lat = next.lat;
+        record.lng = next.lng;
+        windArrow.setLatLng(next);
+        marker.setPopupContent(buildWaypointPopup(record));
+        queueSyncSave();
+      });
+
+      marker.on("contextmenu", () => removeWaypointById(record.id));
+      windArrow.on("contextmenu", () => removeWaypointById(record.id));
+      windArrow.on("click", () => marker.openPopup());
+
+      waypointVisualsById.set(record.id, { marker, windArrow });
+    }
+
+    function renderAllWaypoints() {
+      waypointLayer.clearLayers();
+      waypointVisualsById.clear();
+      waypointRecords.forEach(record => addWaypointRecord(record, false));
+    }
+
+    function renderSavedTracks() {
+      savedTrackLayers.forEach(layer => map.removeLayer(layer));
+      savedTrackLayers = [];
+      savedTracks.forEach(track => {
+        const polyline = L.polyline(track.points, { color: "yellow", weight: 3, opacity: 0.7 }).addTo(map);
+        savedTrackLayers.push(polyline);
+      });
+    }
+
+    // Show waypoint creation modal
+    function showWaypointModal(latlng) {
+      const typeOptions = Object.entries(waypointTypes)
+        .map(([key, data]) => `<option value="${key}">${data.label}</option>`)
+        .join('');
+
+      const modal = document.getElementById('modalBackdrop');
+      const modalContent = document.querySelector('#modalBackdrop .modal');
+      
+      modalContent.innerHTML = `
+        <h3>New Waypoint</h3>
+        <label style="display: block; margin: 8px 0 4px 0; font-size: 13px; color: var(--muted);">Name (optional)</label>
+        <input type="text" id="waypointNameInput" placeholder="e.g., East Treestand" style="width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text); box-sizing: border-box;">
+        
+        <label style="display: block; margin: 8px 0 4px 0; font-size: 13px; color: var(--muted);">Type</label>
+        <select id="waypointTypeSelect" style="width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text); box-sizing: border-box;">
+          ${typeOptions}
+        </select>
+        <div class="modal-buttons">
+          <button class="modal-btn secondary" onclick="document.getElementById('modalBackdrop').style.display = 'none'">Cancel</button>
+          <button class="modal-btn primary" id="confirmWaypointBtn">Place</button>
+        </div>
+      `;
+      
+      modal.style.display = 'flex';
+      
+      // Focus on name input
+      setTimeout(() => document.getElementById('waypointNameInput').focus(), 100);
+      
+      document.getElementById('confirmWaypointBtn').addEventListener('click', async () => {
+        // Auto-fetch weather if wind data not loaded yet
+        if (currentWind.speed === 0 && !lastWeatherData) {
+          try {
+            await fetchWeather();
+          } catch (err) {
+            console.warn("Could not fetch weather for waypoint", err);
+          }
+        }
+        
+        const type = document.getElementById('waypointTypeSelect').value;
+        const customName = document.getElementById('waypointNameInput').value.trim();
+        const waypoint = {
+          id: crypto.randomUUID(),
+          lat: latlng.lat,
+          lng: latlng.lng,
+          type,
+          name: customName,
+          createdAt: new Date().toISOString()
+        };
+
+        waypointRecords.push(waypoint);
+        addWaypointRecord(waypoint, true);
+        queueSyncSave();
+        
+        modal.style.display = 'none';
+      });
+    }
+
+    // Double-click to place waypoint (desktop)
+    map.on('dblclick', (e) => {
+      showWaypointModal(e.latlng);
+    });
+
+    // Long-press to place waypoint (mobile)
+    let longPressTimer = null;
+    let longPressTriggered = false;
+
+    map.on('mousedown', (e) => {
+      longPressTriggered = false;
+      longPressTimer = setTimeout(() => {
+        longPressTriggered = true;
+        showWaypointModal(e.latlng);
+      }, 800); // 800ms long press
+    });
+
+    map.on('mouseup', () => {
+      clearTimeout(longPressTimer);
+    });
+
+    map.on('mousemove', () => {
+      clearTimeout(longPressTimer);
+    });
+
+    // Keep the button for manual mode (optional)
+    addWaypointBtn.addEventListener("click", () => {
+      alert("Double-click anywhere on the map to place a waypoint.\n\nOn mobile, press and hold for 1 second.");
+    });
+
+    const startTrackBtn = document.getElementById("startTrackBtn");
+    let tracking = false;
+    let trackPolyline = null;
+    let trackPoints = [];
+
+    startTrackBtn.addEventListener("click", () => {
+      const willStart = !tracking;
+
+      if (!willStart && tracking) {
+        if (trackPoints.length > 1) {
+          savedTracks.push({
+            id: crypto.randomUUID(),
+            name: `Track ${savedTracks.length + 1}`,
+            points: trackPoints.map(p => [p[0], p[1]]),
+            createdAt: new Date().toISOString()
+          });
+          renderSavedTracks();
+          queueSyncSave();
+        }
+        if (trackPolyline) {
+          map.removeLayer(trackPolyline);
+          trackPolyline = null;
+        }
+      }
+
+      tracking = willStart;
+      startTrackBtn.classList.toggle("active", tracking);
+      if (willStart) {
+        trackPoints = [];
+        if (trackPolyline) map.removeLayer(trackPolyline);
+        trackPolyline = L.polyline([], { color: "yellow" }).addTo(map);
+      }
+    });
+
+    setInterval(() => {
+      if (tracking && currentPosition) {
+        trackPoints.push(currentPosition);
+        if (trackPolyline) trackPolyline.setLatLngs(trackPoints);
+      }
+    }, 3000);
+
+    initializeAuthFromToken();
+
+    // Measurement tool
+    const measureBtn = document.getElementById("measureBtn");
+    let measuring = false;
+    let measurePoints = [];
+    let measureLine = null;
+    const measureMarkers = [];
+
+    function calculateDistance(lat1, lng1, lat2, lng2) {
+      // Haversine formula to calculate distance in meters
+      const R = 6371000; // Earth's radius in meters
+      const phi1 = (lat1 * Math.PI) / 180;
+      const phi2 = (lat2 * Math.PI) / 180;
+      const deltaLat = ((lat2 - lat1) * Math.PI) / 180;
+      const deltaLng = ((lng2 - lng1) * Math.PI) / 180;
+      
+      const a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+                Math.cos(phi1) * Math.cos(phi2) * 
+                Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function onMapClickForMeasure(e) {
+      if (!measuring) return;
+      
+      measurePoints.push(e.latlng);
+      
+      // Add marker for the clicked point
+      const marker = L.circleMarker(e.latlng, {
+        radius: 6,
+        fillColor: "#c8ad3c",
+        color: "#111111",
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.8
+      }).addTo(map);
+      measureMarkers.push(marker);
+      
+      if (measurePoints.length === 2) {
+        // Calculate distance
+        const distance = calculateDistance(
+          measurePoints[0].lat, measurePoints[0].lng,
+          measurePoints[1].lat, measurePoints[1].lng
+        );
+        
+        // Draw line between points
+        measureLine = L.polyline(measurePoints, {
+          color: "#c8ad3c",
+          weight: 2,
+          opacity: 0.7,
+          dashArray: "5, 5"
+        }).addTo(map);
+        
+        // Show distance popup
+        const meters = distance.toFixed(0);
+        const km = (distance / 1000).toFixed(2);
+        const ft = (distance * 3.28084).toFixed(0);
+        
+        L.popup()
+          .setLatLng(measurePoints[1])
+          .setContent(`<strong>Distance</strong><br>${meters}m<br>${km}km<br>${ft}ft`)
+          .openOn(map);
+        
+        // Reset measuring
+        measuring = false;
+        measureBtn.classList.remove("active");
+        measureBtn.textContent = "Measure Distance";
+        map.off('click', onMapClickForMeasure);
+      }
+    }
+
+    measureBtn.addEventListener("click", () => {
+      measuring = !measuring;
+      measureBtn.classList.toggle("active", measuring);
+      
+      if (measuring) {
+        measureBtn.textContent = "Click 2 points...";
+        measurePoints = [];
+        measureMarkers.forEach(m => map.removeLayer(m));
+        measureMarkers.length = 0;
+        if (measureLine) map.removeLayer(measureLine);
+        measureLine = null;
+        map.on('click', onMapClickForMeasure);
+      } else {
+        measuring = false;
+        measureBtn.textContent = "Measure Distance";
+        map.off('click', onMapClickForMeasure);
+        measureMarkers.forEach(m => map.removeLayer(m));
+        measureMarkers.length = 0;
+        if (measureLine) map.removeLayer(measureLine);
+        measureLine = null;
+        measurePoints = [];
+      }
+    });
+
+    // Routing (simple)
+    const routingBtn = document.getElementById("routingBtn");
+    const clearRoutesBtn = document.getElementById("clearRoutesBtn");
+    let routingControl = null;
+
+    routingBtn.addEventListener("click", () => {
+      if (!currentPosition) { alert("No GPS fix yet."); return; }
+      if (routingControl) { alert("Routing already active. Clear routes first."); return; }
+
+      routingControl = L.Routing.control({
+        waypoints: [
+          L.latLng(currentPosition[0], currentPosition[1]),
+          L.latLng(currentPosition[0] + 0.01, currentPosition[1] + 0.01)
+        ],
+        routeWhileDragging: true,
+        show: false
+      }).addTo(map);
+    });
+
+    clearRoutesBtn.addEventListener("click", () => {
+      if (routingControl) { map.removeControl(routingControl); routingControl = null; }
+      if (trackPolyline) { map.removeLayer(trackPolyline); trackPolyline = null; }
+      savedTrackLayers.forEach(layer => map.removeLayer(layer));
+      savedTrackLayers = [];
+      savedTracks = [];
+      tracking = false;
+      startTrackBtn.classList.remove("active");
+      trackPoints = [];
+      queueSyncSave();
+    });
+
+    // Activity Forecast based on real weather
+    const activityForecastBtn = document.getElementById("activityForecastBtn");
+    const activityModal = document.getElementById("activityModal");
+    const activityPanelClose = document.getElementById("activityPanelClose");
+    const activityContent = document.getElementById("activityContent");
+
+    function generateActivityForecast() {
+      if (!lastWeatherData) {
+        return null; // Weather data not fetched yet
+      }
+
+      const now = new Date();
+      const h = now.getHours();
+      const m = now.getMonth() + 1;
+      const temp = lastWeatherData.temperature_2m;
+      const humidity = lastWeatherData.relative_humidity_2m;
+      const windSpeed = currentWind.speed;
+      const pressure = lastWeatherData.pressure_msl / 100; // Convert to mb
+      const condition = getWeatherDescription(lastWeatherData.weather_code);
+
+      // Calculate scores
+      let timeScore = 0.3;
+      let timeNote = "";
+      if (h >= 5 && h <= 8) { timeScore = 1.0; timeNote = "Peak dawn activity"; }
+      else if (h >= 15 && h <= 17) { timeScore = 0.95; timeNote = "Peak pre-rut activity"; }
+      else if (h >= 17 && h <= 19) { timeScore = 0.85; timeNote = "Transition to evening activity"; }
+      else if (h >= 19 && h <= 21) { timeScore = 0.7; timeNote = "Late evening movement"; }
+      else if (h >= 21 && h <= 23) { timeScore = 0.4; timeNote = "Settling in for night"; }
+      else if (h >= 0 && h <= 4) { timeScore = 0.2; timeNote = "Bedded down period"; }
+      else if (h >= 9 && h <= 14) { timeScore = 0.25; timeNote = "Midday rest period"; }
+
+      let seasonScore = 0.5;
+      let seasonNote = "";
+      if (m === 11) { seasonScore = 1.0; seasonNote = "Peak pre-rut (excellent)"; }
+      else if (m === 10 || m === 12) { seasonScore = 0.95; seasonNote = "Rut in full swing"; }
+      else if ((m >= 8 && m <= 9) || m === 1) { seasonScore = 0.7; seasonNote = "Good hunting season"; }
+      else if (m >= 2 && m <= 7) { seasonScore = 0.3; seasonNote = "Off-season (very low activity)"; }
+
+      let tempScore = 0.6;
+      let tempNote = "";
+      if (temp <= 4) { tempScore = 0.95; tempNote = "Cold temps = active feeding"; }
+      else if (temp <= 10) { tempScore = 0.85; tempNote = "Cool weather boosts activity"; }
+      else if (temp <= 16) { tempScore = 0.7; tempNote = "Moderate conditions"; }
+      else if (temp <= 22) { tempScore = 0.5; tempNote = "Warm temps reduce activity"; }
+      else { tempScore = 0.3; tempNote = "High temps = minimal movement"; }
+
+      let windScore = 0.7;
+      let windNote = "";
+      if (windSpeed < 3) { windScore = 0.6; windNote = "Very calm (deer wary)"; }
+      else if (windSpeed < 8) { windScore = 1.0; windNote = "Ideal hunting wind"; }
+      else if (windSpeed < 15) { windScore = 0.8; windNote = "Moderate wind OK"; }
+      else { windScore = 0.5; windNote = "Strong wind = hunkered down"; }
+
+      let humidityScore = 0.7;
+      let humidityNote = "";
+      if (humidity < 40) { humidityScore = 0.6; humidityNote = "Dry air (less active)"; }
+      else if (humidity < 70) { humidityScore = 0.85; humidityNote = "Ideal conditions"; }
+      else { humidityScore = 0.75; humidityNote = "High humidity OK"; }
+
+      let pressureScore = 0.7;
+      let pressureNote = "";
+      if (pressure > 1025) { pressureScore = 0.85; pressureNote = "High pressure = active"; }
+      else if (pressure > 1013) { pressureScore = 0.9; pressureNote = "Excellent pressure"; }
+      else { pressureScore = 0.65; pressureNote = "Low pressure = sluggish"; }
+
+      // Weighted overall score
+      const overall = (timeScore * 0.25 + seasonScore * 0.25 + tempScore * 0.15 + windScore * 0.15 + humidityScore * 0.1 + pressureScore * 0.1);
+
+      let forecastLevel = "Poor";
+      let forecastColor = "#dc2626";
+      let forecastDesc = "Minimal deer movement expected";
+      let tips = "Focus on bedding areas and food sources";
+
+      if (overall >= 0.85) {
+        forecastLevel = "Excellent";
+        forecastColor = "#16a34a";
+        forecastDesc = "Peak hunting conditions - deer are actively moving";
+        tips = "Position yourself in travel corridors and food sources. Great day to be in the field.";
+      } else if (overall >= 0.75) {
+        forecastLevel = "Very Good";
+        forecastColor = "#84cc16";
+        forecastDesc = "Strong deer activity expected";
+        tips = "Hunt productive areas with good scent control and patience.";
+      } else if (overall >= 0.65) {
+        forecastLevel = "Good";
+        forecastColor = "#eab308";
+        forecastDesc = "Decent hunting potential";
+        tips = "Focus on prime feeding and bedding transitions. Hunt with purpose.";
+      } else if (overall >= 0.50) {
+        forecastLevel = "Fair";
+        forecastColor = "#f59e0b";
+        forecastDesc = "Moderate activity - be patient";
+        tips = "Hunt near water sources and food. Persistence may pay off in prime times.";
+      } else if (overall >= 0.35) {
+        forecastLevel = "Poor";
+        forecastColor = "#ef4444";
+        forecastDesc = "Low activity - challenging conditions";
+        tips = "Hunt near natural food sources or bedding areas. Wait for prime hours.";
+      }
+
+      return {
+        overall,
+        forecastLevel,
+        forecastColor,
+        forecastDesc,
+        tips,
+        timeScore, timeNote,
+        seasonScore, seasonNote,
+        tempScore, tempNote, tempF: (lastWeatherData.temperature_2m * 9/5 + 32).toFixed(1),
+        windScore, windNote, windSpeed: currentWind.speed,
+        humidityScore, humidityNote, humidity,
+        pressureScore, pressureNote, pressureInHg: (lastWeatherData.pressure_msl / 3386.39)
+      };
+    }
+
+    function displayActivityForecast() {
+      const forecast = generateActivityForecast();
+      
+      if (!forecast) {
+        activityContent.innerHTML = '<div style="text-align: center; color: var(--muted);">Unable to generate forecast - weather data unavailable</div>';
+        return;
+      }
+
+      activityContent.innerHTML = `
+        <div class="forecast-section">
+          <h4>Overall Forecast</h4>
+          <div class="activity-level" style="color: ${forecast.forecastColor};">${forecast.forecastLevel}</div>
+          <p style="margin: 8px 0; font-size: 13px;">${forecast.forecastDesc}</p>
+        </div>
+        <div class="forecast-section">
+          <h4>Contributing Factors</h4>
+          <div class="forecast-item">
+            <p><strong>Time of Day:</strong> ${forecast.timeNote}</p>
+          </div>
+          <div class="forecast-item">
+            <p><strong>Season:</strong> ${forecast.seasonNote}</p>
+          </div>
+          <div class="forecast-item">
+            <p><strong>Temperature:</strong> ${forecast.tempNote} (${forecast.tempF}°F)</p>
+          </div>
+          <div class="forecast-item">
+            <p><strong>Wind:</strong> ${forecast.windNote} (${(forecast.windSpeed * 0.621371).toFixed(1)} mph)</p>
+          </div>
+          <div class="forecast-item">
+            <p><strong>Humidity:</strong> ${forecast.humidityNote} (${forecast.humidity}%)</p>
+          </div>
+          <div class="forecast-item">
+            <p><strong>Pressure:</strong> ${forecast.pressureNote} (${forecast.pressureInHg.toFixed(2)} inHg)</p>
+          </div>
+        </div>
+        <div class="forecast-section">
+          <h4>Hunter's Tips</h4>
+          <p class="tip">${forecast.tips}</p>
+        </div>
+      `;
+    }
+
+    activityForecastBtn.addEventListener("click", async () => {
+      activityModal.classList.add("open");
+      
+      // Auto-fetch weather if not already loaded
+      if (!lastWeatherData) {
+        activityContent.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 20px;">Fetching weather data...</div>';
+        await fetchWeather();
+      }
+      
+      displayActivityForecast();
+    });
+
+    activityPanelClose.addEventListener("click", () => {
+      activityModal.classList.remove("open");
+    });
+
+    // Close modal when clicking outside
+    activityModal.addEventListener("click", (e) => {
+      if (e.target === activityModal) {
+        activityModal.classList.remove("open");
+      }
+    });
+
+    // Heatmap toggle placeholder (deprecated, replaced with activity forecast)
+    // Kept for reference only
+
+    // Stealth mode
+    const stealthModeBtn = document.getElementById("stealthModeBtn");
+    const reportProblemBtn = document.getElementById("reportProblemBtn");
+    const reportProblemModal = document.getElementById("reportProblemModal");
+    const reportContactEmail = document.getElementById("reportContactEmail");
+    const reportMessage = document.getElementById("reportMessage");
+    const cancelReportBtn = document.getElementById("cancelReportBtn");
+    const submitReportBtn = document.getElementById("submitReportBtn");
+    let stealthMode = false;
+
+    stealthModeBtn.addEventListener("click", () => {
+      stealthMode = !stealthMode;
+      stealthModeBtn.classList.toggle("active", stealthMode);
+      document.getElementById("map").style.filter = stealthMode ? "brightness(0.4)" : "brightness(1)";
+    });
+
+    reportProblemBtn.addEventListener("click", () => {
+      reportProblemModal.style.display = "flex";
+      setTimeout(() => reportMessage.focus(), 50);
+    });
+
+    cancelReportBtn.addEventListener("click", () => {
+      reportProblemModal.style.display = "none";
+    });
+
+    reportProblemModal.addEventListener("click", (e) => {
+      if (e.target === reportProblemModal) {
+        reportProblemModal.style.display = "none";
+      }
+    });
+
+    submitReportBtn.addEventListener("click", async () => {
+      const message = reportMessage.value.trim();
+      const contactEmail = reportContactEmail.value.trim();
+
+      if (message.length < 5) {
+        alert("Please describe the problem with a little more detail.");
+        return;
+      }
+
+      submitReportBtn.disabled = true;
+      submitReportBtn.textContent = "Submitting...";
+
+      try {
+        const response = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message,
+            contactEmail,
+            pageUrl: window.location.href,
+            userAgent: navigator.userAgent
+          })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || `Request failed: ${response.status}`);
+        }
+
+        alert("Thanks — your report was submitted.");
+        reportMessage.value = "";
+        reportContactEmail.value = "";
+        reportProblemModal.style.display = "none";
+      } catch (err) {
+        alert(`Could not submit report: ${err.message}`);
+      } finally {
+        submitReportBtn.disabled = false;
+        submitReportBtn.textContent = "Submit";
+      }
+    });
+
+    // =========================================================
+    // ✅ FIXED AREA STATUS + ARCHERY HATCH + CAN DOTS (ONLY)
+    // =========================================================
+    const refreshStatusBtn = document.getElementById("refreshStatusBtn");
+    const statusSummary = document.getElementById("statusSummary");
+    const statusCounts = document.getElementById("statusCounts");
+
+    let flwAreasLayer = null;
+    let archeryLayerGroup = null;
+    let cantonmentLayerGroup = null;
+
+    function getCheckedInCount(statusObj) {
+      if (!statusObj) return 0;
+      if (typeof statusObj.OccupancyUsed === "number") return statusObj.OccupancyUsed;
+
+      const obt = statusObj.OccupanciesByOccupancyType;
+      if (obt && typeof obt === "object") {
+        let sum = 0;
+        let found = false;
+        for (const k of Object.keys(obt)) {
+          const v = obt[k];
+          if (typeof v === "number") { sum += v; found = true; continue; }
+          if (v && typeof v === "object") {
+            for (const c of ["Count","count","Used","used","OccupancyUsed","occupancyUsed"]) {
+              if (typeof v[c] === "number") { sum += v[c]; found = true; break; }
+            }
+          }
+        }
+        if (found) return sum;
+      }
+      return 0;
+    }
+
+    async function fetchAreaStatus() {
+      try {
+        statusSummary.textContent = "Status: loading…";
+        const r = await fetch("/api/areas", { cache: "no-store" });
+        
+        if (!r.ok) {
+          statusSummary.textContent = "Status: error " + r.status;
+          return;
+        }
+
+        const json = await r.json();
+        
+        const data = json.data || [];
+
+        let openCount = 0;
+        let closedCount = 0;
+        let signedInTotal = 0;
+
+        const statusBySyskey = new Map();
+        
+        for (const a of data) {
+          const key = Number(a.Area_Syskey);
+          statusBySyskey.set(key, a);
+
+          if (a.Open === true) openCount++;
+          if (a.Open === false) closedCount++;
+          signedInTotal += getCheckedInCount(a);
+        }
+        
+        statusSummary.textContent = `Status: ${openCount} open, ${closedCount} closed.`;
+        statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
+
+        await renderFLWAreas(statusBySyskey);
+      } catch (e) {
+        console.error("Error in fetchAreaStatus:", e);
+        statusSummary.textContent = "Status: error fetching data.";
+      }
+    }
+
+    async function renderFLWAreas(statusBySyskey) {
+      try {
+        if (flwAreasLayer) { map.removeLayer(flwAreasLayer); flwAreasLayer = null; }
+        if (archeryLayerGroup) { map.removeLayer(archeryLayerGroup); archeryLayerGroup = null; }
+        if (cantonmentLayerGroup) { map.removeLayer(cantonmentLayerGroup); cantonmentLayerGroup = null; }
+
+        const r = await fetch("flw_areas.geojson", { cache: "no-store" });
+        
+        const gj = await r.json();
+        areaFeatures = gj.features;
+
+        // Patterns
+        const archeryHatch = new L.StripePattern({
+          weight: 3,
+          spaceWeight: 6,
+          color: "#f97316",
+          opacity: 0.50,
+          angle: 45
+        });
+        archeryHatch.addTo(map);
+
+        const canDots = new L.Pattern({ width: 10, height: 10 });
+        const dot = new L.PatternCircle({
+          x: 5, y: 5,
+          radius: 2,
+          fill: true,
+          fillColor: "#3b82f6",
+          fillOpacity: 0.85,
+          stroke: false
+        });
+        canDots.addShape(dot);
+        canDots.addTo(map);
+
+        let currentAreaOpacity = 0.35;
+
+        function styleFeature(feature) {
+          const syskey = Number(feature?.properties?.area_syskey);
+          const status = statusBySyskey.get(syskey);
+
+          let fillColor = "#6b7280";
+          if (status?.Open === true) fillColor = "#16a34a";
+          if (status?.Open === false) fillColor = "#dc2626";
+
+          return { color: "#111827", weight: 1, fillColor, fillOpacity: currentAreaOpacity };
+        }
+
+        function onEachFeature(feature, layer) {
+          const syskey = Number(feature?.properties?.area_syskey);
+          const status = statusBySyskey.get(syskey);
+
+          const name = feature?.properties?.area_name || "Area";
+          const typeRaw = feature?.properties?.area_type || "";
+          const type = String(typeRaw).trim();
+          const typeLower = type.toLowerCase();
+          const displayType = (typeLower.includes("archery") || typeLower.includes("can") || typeLower.includes("cantonment"))
+            ? type
+            : "HA";
+          const openText = status ? (status.Open ? "OPEN" : "CLOSED") : "UNKNOWN";
+          const signedIn = getCheckedInCount(status);
+
+          layer.bindPopup(
+            `<strong>${name}</strong><br>` +
+            `Type: ${displayType}<br>` +
+            `Status: ${openText}<br>` +
+            `Signed in: ${signedIn}<br>` +
+            `<button style="width: 100%; margin-top: 8px; padding: 6px; background: var(--gold); color: #111111; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;" onclick="window.open('https://ftleonardwood.isportsman.net/Login.aspx', '_blank')">SIGN IN</button>`
+          );
+
+          layer.on("mouseover", () => layer.setStyle({ weight: 2, color: "#fbbf24" }));
+          layer.on("mouseout", () => layer.setStyle(styleFeature(feature)));
+        }
+
+        flwAreasLayer = L.geoJSON(gj, { style: styleFeature, onEachFeature }).addTo(map);
+        
+        // Update area opacity based on zoom level
+        function updateAreaOpacity() {
+          if (!flwAreasLayer) return;
+          const zoom = map.getZoom();
+          // Fade out later as you zoom in: max opacity at zoom 12, fade to near 0 by zoom 17
+          currentAreaOpacity = Math.max(0.02, 0.35 * Math.pow(0.78, zoom - 12));
+          flwAreasLayer.setStyle({ fillOpacity: currentAreaOpacity });
+
+          if (archeryLayerGroup) {
+            archeryLayerGroup.eachLayer(layer => {
+              layer.setStyle({ fillOpacity: currentAreaOpacity, opacity: currentAreaOpacity });
+            });
+          }
+
+          if (cantonmentLayerGroup) {
+            cantonmentLayerGroup.eachLayer(layer => {
+              layer.setStyle({ fillOpacity: currentAreaOpacity, opacity: currentAreaOpacity });
+            });
+          }
+        }
+        
+        map.on('zoomend', updateAreaOpacity);
+        updateAreaOpacity();
+        
+        // Auto-fit map to show all areas
+        if (flwAreasLayer && flwAreasLayer.getLayers().length > 0) {
+          const bounds = flwAreasLayer.getBounds();
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [50, 50] });
+          }
+        }
+
+        // Pattern overlays for Archery + CAN
+        const archeryPolys = [];
+        const cantonmentPolys = [];
+
+        flwAreasLayer.eachLayer(layer => {
+          const f = layer.feature;
+          if (!f || !f.properties) return;
+          const t = String(f.properties.area_type || "").trim().toLowerCase();
+
+          // Get popup content from the original feature
+          const syskey = Number(f?.properties?.area_syskey);
+          const status = statusBySyskey.get(syskey);
+          const name = f?.properties?.area_name || "Area";
+          const typeRaw = f?.properties?.area_type || "";
+          const typeText = String(typeRaw).trim();
+          const typeLower = typeText.toLowerCase();
+          const displayType = (typeLower.includes("archery") || typeLower.includes("can") || typeLower.includes("cantonment"))
+            ? typeText
+            : "HA";
+          const openText = status ? (status.Open ? "OPEN" : "CLOSED") : "UNKNOWN";
+          const signedIn = getCheckedInCount(status);
+          const popupContent = 
+            `<strong>${name}</strong><br>` +
+            `Type: ${displayType}<br>` +
+            `Status: ${openText}<br>` +
+            `Signed in: ${signedIn}`;
+
+          if (t === "archery" || t.includes("archery")) {
+            const poly = L.polygon(layer.getLatLngs(), {
+              color: "transparent",
+              weight: 0,
+              fillOpacity: currentAreaOpacity,
+              fillPattern: archeryHatch
+            });
+            poly.bindPopup(popupContent);
+            poly.on("mouseover", () => poly.setStyle({ weight: 2, color: "#fbbf24" }));
+            poly.on("mouseout", () => poly.setStyle({ weight: 0, color: "transparent" }));
+            archeryPolys.push(poly);
+          }
+
+          if (t === "can" || t.includes("cantonment")) {
+            const poly = L.polygon(layer.getLatLngs(), {
+              color: "transparent",
+              weight: 0,
+              fillOpacity: currentAreaOpacity,
+              fillPattern: canDots
+            });
+            poly.bindPopup(popupContent);
+            poly.on("mouseover", () => poly.setStyle({ weight: 2, color: "#fbbf24" }));
+            poly.on("mouseout", () => poly.setStyle({ weight: 0, color: "transparent" }));
+            cantonmentPolys.push(poly);
+          }
+        });
+
+        if (archeryPolys.length) archeryLayerGroup = L.layerGroup(archeryPolys).addTo(map);
+        if (cantonmentPolys.length) cantonmentLayerGroup = L.layerGroup(cantonmentPolys).addTo(map);
+
+        updateAreaOpacity();
+        
+      } catch (e) {
+        console.error("Error in renderFLWAreas:", e);
+        statusSummary.textContent = "Status: error rendering areas.";
+      }
+    }
+
+    refreshStatusBtn.addEventListener("click", fetchAreaStatus);
+    fetchAreaStatus();
+
+    // -----------------------------
+    // Offline Maps: IndexedDB helpers
+    // -----------------------------
+    const offlineStorageUsage = document.getElementById("offlineStorageUsage");
+    const includeSatelliteToggle = document.getElementById("includeSatelliteToggle");
+    const offlineZoomSelect = document.getElementById("offlineZoomSelect");
+    const downloadOfflineBtn = document.getElementById("downloadOfflineBtn");
+    const manageOfflineBtn = document.getElementById("manageOfflineBtn");
+    const offlineIndicator = document.getElementById("offlineIndicator");
+
+    const DB_NAME = "huntbase_offline_tiles";
+    const DB_VERSION = 1;
+    const TILE_STORE = "tiles";
+    const PACK_STORE = "packs";
+    const MAX_STORAGE_BYTES = 5 * 1024 * 1024 * 1024; // ~5GB
+
+    let dbPromise = null;
+
+    function openDB() {
+      if (dbPromise) return dbPromise;
+      dbPromise = new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(TILE_STORE)) {
+            const store = db.createObjectStore(TILE_STORE, { keyPath: "id" });
+            store.createIndex("byPack", "packId", { unique: false });
+          }
+          if (!db.objectStoreNames.contains(PACK_STORE)) {
+            db.createObjectStore(PACK_STORE, { keyPath: "id" });
+          }
+        };
+        req.onsuccess = e => resolve(e.target.result);
+        req.onerror = e => reject(e.target.error);
+      });
+      return dbPromise;
+    }
+
+    async function estimateStorageUsage() {
+      if (!navigator.storage || !navigator.storage.estimate) {
+        offlineStorageUsage.textContent = "Storage Used: unknown";
+        return;
+      }
+      const { usage, quota } = await navigator.storage.estimate();
+      const usedMB = usage ? (usage / (1024 * 1024)).toFixed(1) : "?";
+      const quotaMB = quota ? (quota / (1024 * 1024)).toFixed(0) : "?";
+      offlineStorageUsage.textContent = `Storage Used: ${usedMB} MB of ~${quotaMB} MB`;
+    }
+    estimateStorageUsage();
+
+    async function saveTile(packId, layerType, z, x, y, blob) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(TILE_STORE, "readwrite");
+        const store = tx.objectStore(TILE_STORE);
+        const id = `${packId}_${layerType}_${z}_${x}_${y}`;
+        store.put({ id, packId, layerType, z, x, y, data: blob });
+        tx.oncomplete = () => resolve();
+        tx.onerror = e => reject(e.target.error);
+      });
+    }
+
+    async function getTile(layerType, z, x, y) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(TILE_STORE, "readonly");
+        const store = tx.objectStore(TILE_STORE);
+        const req = store.openCursor();
+        let found = null;
+        const suffix = `_${layerType}_${z}_${x}_${y}`;
+        req.onsuccess = e => {
+          const cursor = e.target.result;
+          if (!cursor) {
+            resolve(found);
+            return;
+          }
+          if (cursor.key.endsWith(suffix)) {
+            found = cursor.value;
+            resolve(found);
+            return;
+          }
+          cursor.continue();
+        };
+        req.onerror = e => reject(e.target.error);
+      });
+    }
+
+    async function savePack(pack) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(PACK_STORE, "readwrite");
+        const store = tx.objectStore(PACK_STORE);
+        store.put(pack);
+        tx.oncomplete = () => resolve();
+        tx.onerror = e => reject(e.target.error);
+      });
+    }
+
+    async function getAllPacks() {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(PACK_STORE, "readonly");
+        const store = tx.objectStore(PACK_STORE);
+        const req = store.getAll();
+        req.onsuccess = e => resolve(e.target.result || []);
+        req.onerror = e => reject(e.target.error);
+      });
+    }
+
+    async function deletePack(packId) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx1 = db.transaction(TILE_STORE, "readwrite");
+        const store1 = tx1.objectStore(TILE_STORE);
+        const idx = store1.index("byPack");
+        const range = IDBKeyRange.only(packId);
+        const req = idx.openCursor(range);
+        req.onsuccess = e => {
+          const cursor = e.target.result;
+          if (cursor) {
+            cursor.delete();
+            cursor.continue();
+          }
+        };
+        tx1.oncomplete = () => {
+          const tx2 = db.transaction(PACK_STORE, "readwrite");
+          const store2 = tx2.objectStore(PACK_STORE);
+          store2.delete(packId);
+          tx2.oncomplete = () => resolve();
+          tx2.onerror = e => reject(e.target.error);
+        };
+        tx1.onerror = e => reject(e.target.error);
+      });
+    }
+
+    async function getAllTiles() {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(TILE_STORE, "readonly");
+        const store = tx.objectStore(TILE_STORE);
+        const req = store.getAll();
+        req.onsuccess = e => resolve(e.target.result || []);
+        req.onerror = e => reject(e.target.error);
+      });
+    }
+
+    // Offline download and manage button handlers
+    downloadOfflineBtn.addEventListener("click", () => {
+      document.getElementById("offlineDownloadModal").style.display = "flex";
+    });
+
+    manageOfflineBtn.addEventListener("click", async () => {
+      document.getElementById("offlineManageModal").style.display = "flex";
+      await loadAndDisplayPacks();
+    });
+
+    document.getElementById("offlineDownloadModal").addEventListener("click", (e) => {
+      if (e.target.id === "offlineDownloadModal") {
+        document.getElementById("offlineDownloadModal").style.display = "none";
+      }
+    });
+
+    document.getElementById("offlineManageModal").addEventListener("click", (e) => {
+      if (e.target.id === "offlineManageModal") {
+        document.getElementById("offlineManageModal").style.display = "none";
+      }
+    });
+
+    async function performOfflineDownload() {
+      const zoomLevel = parseInt(document.getElementById("offlineZoomLevelSelect").value);
+      const bounds = map.getBounds();
+      const north = bounds.getNorth();
+      const south = bounds.getSouth();
+      const east = bounds.getEast();
+      const west = bounds.getWest();
+
+      const progressDiv = document.getElementById("downloadProgress");
+      const progressBar = document.getElementById("downloadProgressBar");
+      const progressStatus = document.getElementById("downloadStatus");
+      const startBtn = document.getElementById("startDownloadBtn");
+
+      progressDiv.style.display = "block";
+      startBtn.disabled = true;
+
+      try {
+        // Get tile coordinates for the bounds at this zoom level
+        const tilesNeeded = calculateTilesForBounds(north, south, east, west, zoomLevel);
+        let tilesDownloaded = 0;
+        let tilesAttempted = 0;
+        const packId = `offline-pack-${Date.now()}`;
+        const packName = `Offline Pack ${new Date().toLocaleString()}`;
+
+        for (const { x, y } of tilesNeeded) {
+          const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoomLevel}/${y}/${x}`;
+          
+          try {
+            const response = await fetch(url);
+            if (response.ok) {
+              const blob = await response.blob();
+              await saveTile(packId, "satellite", zoomLevel, x, y, blob);
+              tilesDownloaded++;
+            }
+          } catch (e) {
+            console.warn(`Failed to download tile ${zoomLevel}/${x}/${y}:`, e);
+          }
+
+          tilesAttempted++;
+          progressStatus.textContent = `${tilesAttempted}/${tilesNeeded.length}`;
+          progressBar.style.width = `${(tilesAttempted / tilesNeeded.length) * 100}%`;
+        }
+
+        if (tilesDownloaded > 0) {
+          await savePack({
+            id: packId,
+            name: packName,
+            zoom: zoomLevel,
+            downloadDate: new Date().toISOString(),
+            bounds: { north, south, east, west },
+            tileCount: tilesDownloaded
+          });
+        }
+
+        alert(`Download complete! ${tilesDownloaded} tiles saved.`);
+        progressDiv.style.display = "none";
+        startBtn.disabled = false;
+        document.getElementById("offlineDownloadModal").style.display = "none";
+        updateOfflineIndicator();
+        estimateStorageUsage();
+      } catch (err) {
+        console.error("Download error:", err);
+        alert("Download failed: " + err.message);
+        progressDiv.style.display = "none";
+        startBtn.disabled = false;
+      }
+    }
+
+    function calculateTilesForBounds(north, south, east, west, zoom) {
+      const tiles = [];
+      const n = 1 << zoom;
+
+      function latLngToTile(lat, lng) {
+        const x = Math.floor(((lng + 180) / 360) * n);
+        const y = Math.floor(((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2) * n);
+        return { x: Math.max(0, Math.min(n - 1, x)), y: Math.max(0, Math.min(n - 1, y)) };
+      }
+
+      const nwTile = latLngToTile(north, west);
+      const seTile = latLngToTile(south, east);
+
+      for (let x = nwTile.x; x <= seTile.x; x++) {
+        for (let y = nwTile.y; y <= seTile.y; y++) {
+          tiles.push({ x, y });
+        }
+      }
+
+      return tiles;
+    }
+
+    async function loadAndDisplayPacks() {
+      try {
+        const packs = await getAllPacks();
+        const tiles = await getAllTiles();
+
+        let totalSize = 0;
+        tiles.forEach(tile => {
+          if (tile.data && tile.data.size) totalSize += tile.data.size;
+        });
+
+        const sizeInMB = (totalSize / (1024 * 1024)).toFixed(2);
+        const storagePercent = (totalSize / (5 * 1024 * 1024 * 1024)) * 100;
+
+        document.getElementById("storageSizeDisplay").textContent = sizeInMB + " MB";
+        document.getElementById("storageBar").style.width = Math.min(100, storagePercent) + "%";
+
+        const packsList = document.getElementById("packsList");
+        if (packs.length === 0) {
+          packsList.innerHTML = '<p style="font-size: 12px; color: var(--muted); text-align: center; padding: 20px;">No offline packs downloaded yet</p>';
+          return;
+        }
+
+        packsList.innerHTML = packs.map(pack => `
+          <div style="padding: 12px; margin: 8px 0; background: rgba(0,0,0,0.3); border-radius: 4px; border-left: 3px solid var(--gold); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="color: var(--gold-strong);">${pack.name}</strong><br>
+              <small style="color: var(--muted);">Zoom ${pack.zoom} • ${new Date(pack.downloadDate).toLocaleDateString()}</small>
+            </div>
+            <button onclick="deletePack('${pack.id}').then(() => loadAndDisplayPacks())" style="background: #dc2626; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Delete</button>
+          </div>
+        `).join("");
+      } catch (err) {
+        console.error("Error loading packs:", err);
+        document.getElementById("packsList").innerHTML = '<p style="color: #dc2626;">Error loading packs</p>';
+      }
+    }
+
+    document.getElementById("startDownloadBtn").addEventListener("click", performOfflineDownload);
+
+    // Offline tile loader
+    function createOfflineTileLayer(baseLayer, layerType) {
+      return L.tileLayer(baseLayer._url, {
+        maxZoom: baseLayer.options.maxZoom,
+        attribution: baseLayer.getAttribution(),
+        tileSize: 256,
+        async: true,
+        crossOrigin: true
+      }).on("tileloadstart", async function (event) {
+        const tile = event.tile;
+        const coords = event.coords;
+        const z = coords.z;
+        const x = coords.x;
+        const y = coords.y;
+
+        try {
+          const cached = await getTile(layerType, z, x, y);
+          if (cached && cached.data) {
+            tile.src = URL.createObjectURL(cached.data);
+            return;
+          }
+        } catch (e) {
+          console.warn("Error reading tile cache:", e);
+        }
+
+        const src = this.getTileUrl(coords);
+        fetch(src)
+          .then(r => r.blob())
+          .then(async blob => {
+            tile.src = URL.createObjectURL(blob);
+          })
+          .catch(() => {});
+      });
+    }
+
+    const offlineUSGS = createOfflineTileLayer(usgsTopo, "usgs");
+    const offlineESRI = createOfflineTileLayer(esriTopo, "esri");
+    const offlineOTM = createOfflineTileLayer(otmTopo, "otm");
+    const offlineSAT = createOfflineTileLayer(satellite, "sat");
+
+    // Offline indicator (simple)
+    async function updateOfflineIndicator() {
+      const packs = await getAllPacks();
+      if (!packs.length) {
+        offlineIndicator.style.display = "none";
+        return;
+      }
+      const center = map.getCenter();
+      const lat = center.lat;
+      const lng = center.lng;
+      let inside = false;
+      for (const p of packs) {
+        const { north, south, east, west } = p.bounds;
+        if (lat <= north && lat >= south && lng >= west && lng <= east) {
+          inside = true;
+          break;
+        }
+      }
+      offlineIndicator.style.display = inside ? "block" : "none";
+    }
+
+    map.on("moveend", updateOfflineIndicator);
+    updateOfflineIndicator();
+
+    // Real Weather Data from Open-Meteo API
+    const weatherBtn = document.getElementById("weatherBtn");
+    const weatherModal = document.getElementById("weatherModal");
+    const weatherPanelClose = document.getElementById("weatherPanelClose");
+    const weatherContent = document.getElementById("weatherContent");
+
+    // Fort Leonard Wood coordinates
+    const LOCATION = { lat: 38.2028, lng: -92.1735, name: "Fort Leonard Wood, MO" };
+
+    async function fetchWeather() {
+      try {
+        weatherContent.innerHTML = '<div class="loading">Fetching weather data...</div>';
+        
+        // Open-Meteo API (free, no key needed)
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${LOCATION.lat}&longitude=${LOCATION.lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&timezone=auto`;
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        const current = data.current;
+        
+        // Store wind data globally for waypoints
+        currentWind = {
+          speed: current.wind_speed_10m,
+          direction: current.wind_direction_10m,
+          angle: current.wind_direction_10m
+        };
+        
+        lastWeatherData = { ...current, fetchTime: new Date() };
+        updateWeather();
+        displayWeather(current);
+      } catch (err) {
+        console.error("Weather fetch failed:", err);
+        weatherContent.innerHTML = '<div class="loading" style="color: #dc2626;">Unable to fetch weather data</div>';
+      }
+    }
+
+    function getWeatherDescription(code) {
+      // WMO Weather interpretation codes
+      const codes = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Foggy",
+        48: "Foggy",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        71: "Slight snow",
+        73: "Moderate snow",
+        75: "Heavy snow",
+        80: "Slight rain showers",
+        81: "Moderate rain showers",
+        82: "Violent rain showers",
+        85: "Slight snow showers",
+        86: "Heavy snow showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with hail",
+        99: "Thunderstorm with hail"
+      };
+      return codes[code] || "Unknown";
+    }
+
+    function getWindDirection(angle) {
+      const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+      return dirs[Math.round(angle / 22.5) % 16];
+    }
+
+    function displayWeather(current) {
+      const tempF = (current.temperature_2m * 9/5 + 32).toFixed(1);
+      const feelsLikeF = (current.apparent_temperature * 9/5 + 32).toFixed(1);
+      const humidity = current.relative_humidity_2m;
+      const pressureInHg = (current.pressure_msl / 3386.39).toFixed(2);
+      const windSpeed = current.wind_speed_10m;
+      const windAngle = current.wind_direction_10m;
+      const windDir = getWindDirection(windAngle);
+      const condition = getWeatherDescription(current.weather_code);
+      const precipIn = (current.precipitation || 0) * 0.03937;
+
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      weatherContent.innerHTML = `
+        <div class="weather-section">
+          <h4>Current Conditions at ${LOCATION.name}</h4>
+          <div class="weather-item">
+            <strong>Temperature:</strong>
+            <span>${tempF}°F</span>
+          </div>
+          <div class="weather-item">
+            <strong>Feels Like:</strong>
+            <span>${feelsLikeF}°F</span>
+          </div>
+          <div class="weather-item">
+            <strong>Condition:</strong>
+            <span>${condition}</span>
+          </div>
+        </div>
+        <div class="weather-section">
+          <h4>Wind & Pressure</h4>
+          <div class="weather-item">
+            <strong>Wind Speed:</strong>
+            <span>${(windSpeed * 0.621371).toFixed(1)} mph</span>
+          </div>
+          <div class="weather-item">
+            <strong>Wind Direction:</strong>
+            <span>${windDir} (${windAngle}°)</span>
+          </div>
+          <div class="weather-item">
+            <strong>Pressure:</strong>
+            <span>${pressureInHg} inHg</span>
+          </div>
+        </div>
+        <div class="weather-section">
+          <h4>Other</h4>
+          <div class="weather-item">
+            <strong>Humidity:</strong>
+            <span>${humidity}%</span>
+          </div>
+          <div class="weather-item">
+            <strong>Precipitation:</strong>
+            <span>${precipIn.toFixed(2)} in</span>
+          </div>
+        </div>
+        <div class="last-updated">Updated: ${time}<br>Data from Open-Meteo</div>
+      `;
+    }
+
+    weatherBtn.addEventListener("click", () => {
+      weatherModal.classList.add("open");
+      fetchWeather();
+    });
+
+    weatherPanelClose.addEventListener("click", () => {
+      weatherModal.classList.remove("open");
+    });
+
+    // Close modal when clicking outside
+    weatherModal.addEventListener("click", (e) => {
+      if (e.target === weatherModal) {
+        weatherModal.classList.remove("open");
+      }
+    });
+
+    // Service worker registration
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("service-worker.js").catch(err => console.warn("SW registration failed:", err));
+      });
+    }
+  </script>
+</body>
+</html>

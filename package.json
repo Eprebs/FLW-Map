@@ -1,0 +1,14 @@
+{
+  "name": "flw-hunt-map",
+  "version": "1.0.0",
+  "description": "FLW Hunt Map - combined frontend + backend server",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18"
+  }
+}
