@@ -470,6 +470,64 @@ function buildUsersOverviewHtml(store) {
 </html>`;
 }
 
+function buildAdminLauncherHtml() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HuntAO Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111; max-width: 560px; }
+    h1 { margin: 0 0 8px 0; }
+    p { color: #555; margin: 0 0 16px 0; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input { width: 100%; padding: 10px; font-size: 14px; box-sizing: border-box; }
+    .row { display: flex; gap: 8px; margin-top: 12px; }
+    button { padding: 10px 14px; font-size: 14px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>HuntAO Admin</h1>
+  <p>Paste your admin key once, then use the buttons below.</p>
+  <label for="adminKey">Admin Key</label>
+  <input id="adminKey" type="password" autocomplete="off" placeholder="Paste ADMIN_EXPORT_KEY" />
+  <div class="row">
+    <button id="openOverview" type="button">Open Users Page</button>
+    <button id="downloadCsv" type="button">Download CSV</button>
+  </div>
+
+  <script>
+    const keyInput = document.getElementById('adminKey');
+    const savedKey = localStorage.getItem('huntao_admin_key') || '';
+    if (savedKey) keyInput.value = savedKey;
+
+    function getKey() {
+      const value = keyInput.value.trim();
+      if (!value) {
+        alert('Paste your admin key first.');
+        return '';
+      }
+      localStorage.setItem('huntao_admin_key', value);
+      return encodeURIComponent(value);
+    }
+
+    document.getElementById('openOverview').addEventListener('click', () => {
+      const key = getKey();
+      if (!key) return;
+      window.open('/api/admin/users-overview?key=' + key, '_blank');
+    });
+
+    document.getElementById('downloadCsv').addEventListener('click', () => {
+      const key = getKey();
+      if (!key) return;
+      window.location.href = '/api/admin/users.csv?key=' + key;
+    });
+  </script>
+</body>
+</html>`;
+}
+
 function fillTemplate(template, fields) {
   return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
     return escapeHtml(fields[key] ?? "");
@@ -583,6 +641,15 @@ const server = http.createServer(async (req, res) => {
       config,
       productionErrors
     });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/admin") {
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store"
+    });
+    res.end(buildAdminLauncherHtml());
     return;
   }
 
