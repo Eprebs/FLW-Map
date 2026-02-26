@@ -1603,6 +1603,13 @@
     const waypointVisualsById = new Map();
     let savedTracks = [];
     let savedTrackLayers = [];
+    let placingWaypoint = false;
+
+    function setWaypointPlacementMode(enabled) {
+      placingWaypoint = enabled;
+      addWaypointBtn.classList.toggle("active", enabled);
+      addWaypointBtn.textContent = enabled ? "Click Map to Place..." : "Add Waypoint";
+    }
 
     function escapeHtmlText(value) {
       return String(value || "")
@@ -1754,6 +1761,15 @@
         return;
       }
 
+      if (placingWaypoint) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        const latlng = map.mouseEventToLatLng(evt);
+        setWaypointPlacementMode(false);
+        showWaypointModal(latlng);
+        return;
+      }
+
       const now = Date.now();
       const point = map.mouseEventToContainerPoint(evt);
       const isQuickSecondClick = now - lastMapClickAt < 350;
@@ -1761,6 +1777,7 @@
 
       if (isQuickSecondClick && isNearPrevious) {
         const latlng = map.mouseEventToLatLng(evt);
+        setWaypointPlacementMode(false);
         showWaypointModal(latlng);
         lastMapClickAt = 0;
         lastMapClickPoint = null;
@@ -1793,7 +1810,7 @@
 
     // Keep the button for manual mode (optional)
     addWaypointBtn.addEventListener("click", () => {
-      alert("Double-click anywhere on the map to place a waypoint.\n\nOn mobile, press and hold for 1 second.");
+      setWaypointPlacementMode(!placingWaypoint);
     });
 
     const startTrackBtn = document.getElementById("startTrackBtn");
@@ -2362,6 +2379,13 @@
 
           const bindToolInteractions = (targetLayer) => {
             targetLayer.on("click", (e) => {
+              if (placingWaypoint) {
+                L.DomEvent.stop(e);
+                setWaypointPlacementMode(false);
+                showWaypointModal(e.latlng);
+                return;
+              }
+
               if (measuring) {
                 L.DomEvent.stop(e);
                 onMapClickForMeasure(e);
