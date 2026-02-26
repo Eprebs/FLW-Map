@@ -1,6 +1,29 @@
 # Large local tile dataset (do not push to GitHub)
 hillshade_tiles/
 contours_high.geojson
+contours_med.geojson
+
+# Raw/source geodata (never commit)
+raw_data/
+geodata_raw/
+data/raw/
+**/*.shp
+**/*.shx
+**/*.dbf
+**/*.prj
+**/*.cpg
+**/*.qix
+**/*.gpkg
+**/*.tif
+**/*.tiff
+**/*.vrt
+**/*.aux.xml
+**/*.zip
+
+# Generated tiles/exports
+tiles/
+exports/
+*.mbtiles
 
 # Local runtime data
 data/app-data.json
@@ -13,3 +36,8 @@ push.log
 .env
 .env.*
 !.env.production.example
+
+# Python cache
+__pycache__/
+*.pyc
+
