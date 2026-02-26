@@ -1152,6 +1152,81 @@
       return "Outside Known Areas";
     }
 
+    function distanceMeters(lat1, lng1, lat2, lng2) {
+      const R = 6371000;
+      const p1 = (lat1 * Math.PI) / 180;
+      const p2 = (lat2 * Math.PI) / 180;
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLng = ((lng2 - lng1) * Math.PI) / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function getFeatureCenter(feature) {
+      const geom = feature?.geometry;
+      if (!geom) return null;
+
+      let ring = null;
+      if (geom.type === "Polygon" && Array.isArray(geom.coordinates?.[0])) {
+        ring = geom.coordinates[0];
+      } else if (geom.type === "MultiPolygon" && Array.isArray(geom.coordinates?.[0]?.[0])) {
+        ring = geom.coordinates[0][0];
+      }
+
+      if (!ring || !ring.length) return null;
+      let sumLng = 0;
+      let sumLat = 0;
+      for (const coord of ring) {
+        sumLng += coord[0];
+        sumLat += coord[1];
+      }
+      return { lat: sumLat / ring.length, lng: sumLng / ring.length };
+    }
+
+    function getNearestReferencePoint(lat, lng) {
+      const currentArea = getCurrentArea(lat, lng);
+      if (currentArea && currentArea !== "Outside Known Areas") {
+        return currentArea;
+      }
+
+      let bestName = "Current Position";
+      let bestDistance = Number.POSITIVE_INFINITY;
+
+      for (const feature of areaFeatures) {
+        const center = getFeatureCenter(feature);
+        if (!center) continue;
+        const d = distanceMeters(lat, lng, center.lat, center.lng);
+        if (d < bestDistance) {
+          bestDistance = d;
+          bestName = feature?.properties?.area_name || "Current Position";
+        }
+      }
+
+      return bestName;
+    }
+
+    const cityStateCache = new Map();
+    async function getCityState(lat, lng) {
+      const cacheKey = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+      if (cityStateCache.has(cacheKey)) {
+        return cityStateCache.get(cacheKey);
+      }
+
+      try {
+        const url = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lng}&count=1&language=en&format=json`;
+        const response = await fetch(url);
+        const data = await response.json();
+        const row = Array.isArray(data?.results) ? data.results[0] : null;
+        const city = row?.name || row?.admin3 || row?.admin2 || "";
+        const state = row?.admin1 || row?.country || "";
+        const label = [city, state].filter(Boolean).join(", ") || "Unknown area";
+        cityStateCache.set(cacheKey, label);
+        return label;
+      } catch {
+        return "Unknown area";
+      }
+    }
+
     let gpsWatchId = null;
     let currentPosition = null;
     let gpsMarker = null;
@@ -2936,8 +3011,10 @@
 
         const weatherLat = currentPosition ? currentPosition[0] : LOCATION.lat;
         const weatherLng = currentPosition ? currentPosition[1] : LOCATION.lng;
+        const referencePoint = getNearestReferencePoint(weatherLat, weatherLng);
+        const cityState = await getCityState(weatherLat, weatherLng);
         const weatherLabel = currentPosition
-          ? `${getCurrentArea(weatherLat, weatherLng)} (${weatherLat.toFixed(4)}, ${weatherLng.toFixed(4)})`
+          ? `${referencePoint} • ${cityState}`
           : LOCATION.name;
 
         // Open-Meteo API (free, no key needed)
