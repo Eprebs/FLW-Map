@@ -1205,6 +1205,29 @@
       return bestName;
     }
 
+    function compactReferenceName(name) {
+      let text = String(name || "").trim();
+      if (!text) return "Current Position";
+
+      const replacements = [
+        [/\bFort Leonard Wood\b/gi, "FLW"],
+        [/\bMilitary Reservation\b/gi, "Res."],
+        [/\bTraining Area\b/gi, "TA"],
+        [/\bCantonment\b/gi, "CAN"],
+        [/\s+/g, " "]
+      ];
+
+      for (const [pattern, value] of replacements) {
+        text = text.replace(pattern, value);
+      }
+
+      if (text.length > 34) {
+        text = `${text.slice(0, 31)}...`;
+      }
+
+      return text;
+    }
+
     const cityStateCache = new Map();
     async function getCityState(lat, lng) {
       const cacheKey = `${lat.toFixed(3)},${lng.toFixed(3)}`;
@@ -3011,7 +3034,7 @@
 
         const weatherLat = currentPosition ? currentPosition[0] : LOCATION.lat;
         const weatherLng = currentPosition ? currentPosition[1] : LOCATION.lng;
-        const referencePoint = getNearestReferencePoint(weatherLat, weatherLng);
+        const referencePoint = compactReferenceName(getNearestReferencePoint(weatherLat, weatherLng));
         const cityState = await getCityState(weatherLat, weatherLng);
         const weatherLabel = currentPosition
           ? `${referencePoint} • ${cityState}`
