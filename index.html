@@ -2331,6 +2331,13 @@
               if (measuring) {
                 L.DomEvent.stop(e);
                 onMapClickForMeasure(e);
+                return;
+              }
+
+              const clickCount = Number(e?.originalEvent?.detail || 0);
+              if (clickCount >= 2) {
+                L.DomEvent.stop(e);
+                showWaypointModal(e.latlng);
               }
             });
 
