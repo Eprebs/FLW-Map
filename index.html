@@ -1016,17 +1016,18 @@
     satellite.addTo(map);
 
     // Overlays: Vector-based contour lines (OnX style)
-    // Load different contour datasets based on zoom level
-    let contoursLowData = null;
+    const CONTOURS_API_BASE = String(window.HUNTAO_CONTOURS_API_BASE || "").trim().replace(/\/$/, "");
+    const HILLSHADE_TILE_URL = String(window.HUNTAO_HILLSHADE_URL || "").trim() || "./hillshade_tiles/{z}/{x}/{y}.png";
+
     let contoursMedData = null;
     let contoursHighData = null;
-    let contoursLowLayer = null;
-    let contoursMedLayer = null;
-    let contoursHighLayer = null;
     let currentContoursLayer = null;
+    let remoteContoursEnabled = Boolean(CONTOURS_API_BASE);
+    let remoteContoursHealthy = true;
+    let lastContoursRequestId = 0;
 
-    // Cache loaded GeoJSON to avoid re-downloading
-    async function loadContoursData() {
+    // Local fallback data (used when remote API is unavailable)
+    async function loadLocalContoursData() {
       try {
         contoursMedData = await fetch('/contours_med.geojson').then(r => {
           if (!r.ok) throw new Error(`Failed to load med: ${r.status}`);
@@ -1045,6 +1046,20 @@
         contoursHighData = null;
         console.warn('High-resolution contours unavailable; using medium contours only.');
       }
+    }
+
+    function buildContoursApiUrl() {
+      const bounds = map.getBounds();
+      const bbox = [
+        bounds.getWest().toFixed(6),
+        bounds.getSouth().toFixed(6),
+        bounds.getEast().toFixed(6),
+        bounds.getNorth().toFixed(6)
+      ].join(',');
+      const zoom = map.getZoom();
+      const simplify = zoom >= 15 ? 0 : zoom >= 13 ? 0.00003 : 0.00008;
+      const limit = zoom >= 15 ? 18000 : 12000;
+      return `${CONTOURS_API_BASE}/api/contours?bbox=${bbox}&limit=${limit}&simplify=${simplify}`;
     }
 
     // Style contour lines - dark yellow like OnX
@@ -1097,43 +1112,73 @@
       });
     }
 
-    // Update contours based on zoom level
-    function updateContours() {
-      if (!contoursActive) return;
-      
+    function renderContoursLayer(data) {
       const zoom = map.getZoom();
-      
+
       // Remove current layer if it exists
       if (currentContoursLayer) {
         map.removeLayer(currentContoursLayer);
         currentContoursLayer = null;
       }
 
-      // Add appropriate layer based on zoom
-      if (zoom >= 16 && contoursHighData) {
+      // Add appropriate layer based on zoom (for local fallback)
+      if (zoom >= 16 && data === null && contoursHighData) {
         currentContoursLayer = createContoursLayer(contoursHighData, zoom);
         if (currentContoursLayer) currentContoursLayer.addTo(map);
-      } else if (zoom >= 10 && contoursMedData) {
+        return;
+      }
+
+      if (zoom >= 10 && data === null && contoursMedData) {
         currentContoursLayer = createContoursLayer(contoursMedData, zoom);
+        if (currentContoursLayer) currentContoursLayer.addTo(map);
+        return;
+      }
+
+      if (data) {
+        currentContoursLayer = createContoursLayer(data, zoom);
         if (currentContoursLayer) currentContoursLayer.addTo(map);
       }
     }
 
-    // Load contours data on map init
-    loadContoursData().then(() => {
-      updateContours();
-    });
+    async function updateContours() {
+      if (!contoursActive) return;
 
-    // Update contours when zoom changes
+      if (!remoteContoursEnabled || !remoteContoursHealthy) {
+        renderContoursLayer(null);
+        return;
+      }
+
+      const requestId = ++lastContoursRequestId;
+      try {
+        const remoteData = await fetch(buildContoursApiUrl(), { cache: 'no-store' }).then(r => {
+          if (!r.ok) throw new Error(`Contours API failed: ${r.status}`);
+          return r.json();
+        });
+
+        if (requestId !== lastContoursRequestId) return;
+        renderContoursLayer(remoteData);
+      } catch (err) {
+        console.warn('Remote contours unavailable; using local fallback.', err);
+        remoteContoursHealthy = false;
+        await loadLocalContoursData();
+        renderContoursLayer(null);
+      }
+    }
+
+    // Load local fallback once in background
+    loadLocalContoursData();
+
+    // Update contours when view changes
     map.on('zoomend', updateContours);
+    map.on('moveend', updateContours);
 
-    // Hillshade via local XYZ tiles (colored terrain)
+    // Hillshade via local or cloud XYZ tiles
     const hillshadeLayer = L.tileLayer(
-      "./hillshade_tiles/{z}/{x}/{y}.png",
+      HILLSHADE_TILE_URL,
       {
         maxZoom: 17,
         opacity: 0.4,
-        attribution: "Local Hillshade",
+        attribution: HILLSHADE_TILE_URL.includes('hillshade_tiles') ? "Local Hillshade" : "Hillshade",
         className: "hillshade-layer"
       }
     );
@@ -1149,6 +1194,7 @@
     contoursToggle.addEventListener("change", () => {
       if (contoursToggle.checked && !contoursActive) {
         contoursActive = true;
+        if (remoteContoursEnabled) remoteContoursHealthy = true;
         updateContours();
       } else if (!contoursToggle.checked && contoursActive) {
         contoursActive = false;
