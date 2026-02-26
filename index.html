@@ -1722,45 +1722,53 @@
 
     // Define waypoint types with custom SVG icons
     const waypointTypes = {
-      'treestand': { 
-        color: '#a68b2f', 
+      'treestand': {
         label: 'Treestand',
-        svg: '<g><circle cx="16" cy="20" r="8" fill="#a68b2f" opacity="0.8"/><line x1="16" y1="8" x2="16" y2="32" stroke="#f5f2e9" stroke-width="2"/></g>' 
+        pin: '#2a4a40',
+        icon: '#ecf2f0',
+        svg: '<g stroke="#ecf2f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="16" y1="11" x2="16" y2="24"/><path d="M12 13 L16 9 L20 13"/><line x1="12" y1="17" x2="20" y2="17"/></g>'
       },
-      'blind': { 
-        color: '#5e5427', 
+      'blind': {
         label: 'Ground Blind',
-        svg: '<g><rect x="10" y="12" width="12" height="14" fill="#5e5427" opacity="0.8"/><rect x="12" y="14" width="2" height="2" fill="#f5f2e9"/><rect x="18" y="14" width="2" height="2" fill="#f5f2e9"/></g>'
+        pin: '#385347',
+        icon: '#ecf2f0',
+        svg: '<g stroke="#ecf2f0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M10 20 L13 13 H19 L22 20 Z"/><line x1="13" y1="13" x2="16" y2="10"/><line x1="19" y1="13" x2="16" y2="10"/></g>'
       },
-      'waterhole': { 
-        color: '#9b8531', 
+      'waterhole': {
         label: 'Water Hole',
-        svg: '<g><path d="M16 10 Q20 14 20 18 Q20 22 16 24 Q12 22 12 18 Q12 14 16 10" fill="#9b8531" opacity="0.8"/></g>'
+        pin: '#2f5360',
+        icon: '#d9ecff',
+        svg: '<g fill="none" stroke="#d9ecff" stroke-width="1.5" stroke-linecap="round"><path d="M12 17 C14 15, 18 15, 20 17"/><path d="M11 20 C13.8 18, 18.2 18, 21 20"/><path d="M10 23 C13.5 21, 18.5 21, 22 23"/></g>'
       },
-      'feedingarea': { 
-        color: '#7c7a2f', 
+      'feedingarea': {
         label: 'Feeding Area',
-        svg: '<g><circle cx="10" cy="14" r="2" fill="#f5f2e9"/><circle cx="16" cy="10" r="2" fill="#f5f2e9"/><circle cx="22" cy="14" r="2" fill="#f5f2e9"/><circle cx="14" cy="20" r="2" fill="#f5f2e9"/><circle cx="18" cy="20" r="2" fill="#f5f2e9"/></g>'
+        pin: '#4f5a36',
+        icon: '#f3f1dc',
+        svg: '<g fill="#f3f1dc"><circle cx="12" cy="17" r="1.5"/><circle cx="16" cy="14" r="1.5"/><circle cx="20" cy="17" r="1.5"/><circle cx="14" cy="21" r="1.5"/><circle cx="18" cy="21" r="1.5"/></g>'
       },
-      'beddingarea': { 
-        color: '#8b7c2f', 
+      'beddingarea': {
         label: 'Bedding Area',
-        svg: '<g><ellipse cx="16" cy="16" rx="7" ry="5" fill="#8b7c2f" opacity="0.8"/><path d="M13 18 Q13 22 16 24 Q19 22 19 18" fill="#8b7c2f" opacity="0.8"/></g>'
+        pin: '#5a4b3a',
+        icon: '#f5e9dc',
+        svg: '<g fill="none" stroke="#f5e9dc" stroke-width="1.5" stroke-linecap="round"><ellipse cx="16" cy="19" rx="6" ry="3.8"/><path d="M10 19 Q13 22.8 16 22.8 Q19 22.8 22 19"/></g>'
       },
-      'signpost': { 
-        color: '#c8ad3c', 
+      'signpost': {
         label: 'Sign Post',
-        svg: '<g><rect x="15" y="8" width="2" height="16" fill="#f5f2e9"/><path d="M10 10 L22 10 L22 14 L10 14 Z" fill="#c8ad3c" opacity="0.8"/></g>'
+        pin: '#4b4f57',
+        icon: '#ecf2f0',
+        svg: '<g fill="none" stroke="#ecf2f0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="16" y1="10" x2="16" y2="24"/><path d="M16 12 H22 L20.5 15 H16"/></g>'
       },
-      'saltlick': { 
-        color: '#b08a38', 
+      'saltlick': {
         label: 'Salt Lick',
-        svg: '<g><circle cx="12" cy="12" r="3" fill="#b08a38" opacity="0.8"/><circle cx="16" cy="14" r="3" fill="#b08a38" opacity="0.8"/><circle cx="20" cy="12" r="3" fill="#b08a38" opacity="0.8"/><circle cx="16" cy="18" r="3" fill="#b08a38" opacity="0.8"/></g>'
+        pin: '#6b5d45',
+        icon: '#fff3d6',
+        svg: '<g fill="none" stroke="#fff3d6" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21 L13.5 14.5 H18.5 L21 21 Z"/><line x1="13" y1="18" x2="19" y2="18"/></g>'
       },
-      'generic': { 
-        color: '#a68b2f', 
+      'generic': {
         label: 'Waypoint',
-        svg: '<g><circle cx="16" cy="14" r="5" fill="#a68b2f" opacity="0.8"/><circle cx="16" cy="14" r="2" fill="#f5f2e9"/></g>'
+        pin: '#2f5360',
+        icon: '#ecf2f0',
+        svg: '<g fill="none" stroke="#ecf2f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="18" r="4"/><path d="M16 14 V22"/><path d="M12 18 H20"/></g>'
       }
     };
 
@@ -1768,13 +1776,14 @@
     function createWaypointIcon(type) {
       const typeData = waypointTypes[type] || waypointTypes['generic'];
       return L.divIcon({
-        html: `<svg width="32" height="40" viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg">
-          <path d="M16 0C9.37 0 4 5.37 4 12c0 8 12 26 12 26s12-18 12-26c0-6.63-5.37-12-12-12z" fill="${typeData.color}" stroke="#0f0f0f" stroke-width="1.5"/>
+        html: `<svg width="34" height="44" viewBox="0 0 34 44" xmlns="http://www.w3.org/2000/svg" aria-label="${typeData.label}">
+          <path d="M17 1C9.82 1 4 6.82 4 14c0 8.72 13 28 13 28s13-19.28 13-28C30 6.82 24.18 1 17 1z" fill="${typeData.pin}" stroke="#0f1418" stroke-width="1.6"/>
+          <circle cx="17" cy="18" r="8.5" fill="rgba(13,20,25,0.32)" stroke="rgba(236,242,240,0.22)" stroke-width="0.8"/>
           ${typeData.svg}
         </svg>`,
-        iconSize: [32, 40],
-        iconAnchor: [16, 40],
-        popupAnchor: [0, -40],
+        iconSize: [34, 44],
+        iconAnchor: [17, 44],
+        popupAnchor: [0, -44],
         className: 'waypoint-marker'
       });
     }
