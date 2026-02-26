@@ -630,7 +630,7 @@
 
     <h3>Tools</h3>
     <div class="drawer-section">
-      <button id="gpsFollowBtn" class="drawer-btn">GPS Follow</button>
+      <button id="gpsFollowBtn" class="drawer-btn">Snap to My Location</button>
       <button id="addWaypointBtn" class="drawer-btn">Add Waypoint</button>
       <button id="startTrackBtn" class="drawer-btn">Start Track</button>
       <button id="measureBtn" class="drawer-btn">Measure Distance</button>
@@ -1153,10 +1153,44 @@
     }
 
     let gpsWatchId = null;
-    let gpsFollow = false;
     let currentPosition = null;
+    let gpsMarker = null;
+    let gpsAccuracyCircle = null;
+    let lastWeatherFetchAt = 0;
     let lastWeatherData = null;
     let currentWind = { speed: 0, direction: 0, angle: 0 };
+
+    function updateGpsVisuals(latitude, longitude, accuracy) {
+      const latlng = L.latLng(latitude, longitude);
+
+      if (!gpsMarker) {
+        gpsMarker = L.circleMarker(latlng, {
+          radius: 7,
+          color: "#111111",
+          weight: 2,
+          fillColor: "#3b82f6",
+          fillOpacity: 0.95,
+          pane: "markerPane"
+        }).addTo(map);
+      } else {
+        gpsMarker.setLatLng(latlng);
+      }
+
+      if (!gpsAccuracyCircle) {
+        gpsAccuracyCircle = L.circle(latlng, {
+          radius: accuracy || 0,
+          color: "#3b82f6",
+          weight: 1,
+          opacity: 0.55,
+          fillColor: "#3b82f6",
+          fillOpacity: 0.12,
+          interactive: false
+        }).addTo(map);
+      } else {
+        gpsAccuracyCircle.setLatLng(latlng);
+        gpsAccuracyCircle.setRadius(Math.max(1, accuracy || 0));
+      }
+    }
 
     function updateTime() {
       const now = new Date();
@@ -1177,8 +1211,11 @@
           hudLocation.textContent = `Lat: ${latitude.toFixed(5)}, Lng: ${longitude.toFixed(5)}`;
           hudAccuracy.textContent = `Accuracy: ${accuracy ? accuracy.toFixed(0) + " m" : "---"}`;
           hudCurrentArea.textContent = `Area: ${getCurrentArea(latitude, longitude)}`;
+          updateGpsVisuals(latitude, longitude, accuracy);
 
-          if (gpsFollow) map.setView(currentPosition, Math.max(map.getZoom(), 15));
+          if (!lastWeatherData || Date.now() - lastWeatherFetchAt > 10 * 60 * 1000) {
+            fetchWeather().catch(err => console.warn("Weather refresh from GPS update failed:", err));
+          }
         },
         err => console.warn("GPS error:", err),
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
@@ -1188,9 +1225,11 @@
 
     const gpsFollowBtn = document.getElementById("gpsFollowBtn");
     gpsFollowBtn.addEventListener("click", () => {
-      gpsFollow = !gpsFollow;
-      gpsFollowBtn.classList.toggle("active", gpsFollow);
-      if (gpsFollow && currentPosition) map.setView(currentPosition, Math.max(map.getZoom(), 15));
+      if (!currentPosition) {
+        alert("No GPS fix yet.");
+        return;
+      }
+      map.setView(currentPosition, Math.max(map.getZoom(), 15));
     });
 
     // HUD weather (real data)
@@ -2894,9 +2933,15 @@
     async function fetchWeather() {
       try {
         weatherContent.innerHTML = '<div class="loading">Fetching weather data...</div>';
-        
+
+        const weatherLat = currentPosition ? currentPosition[0] : LOCATION.lat;
+        const weatherLng = currentPosition ? currentPosition[1] : LOCATION.lng;
+        const weatherLabel = currentPosition
+          ? `${getCurrentArea(weatherLat, weatherLng)} (${weatherLat.toFixed(4)}, ${weatherLng.toFixed(4)})`
+          : LOCATION.name;
+
         // Open-Meteo API (free, no key needed)
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${LOCATION.lat}&longitude=${LOCATION.lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&timezone=auto`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${weatherLat}&longitude=${weatherLng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&timezone=auto`;
         
         const response = await fetch(url);
         const data = await response.json();
@@ -2910,8 +2955,9 @@
         };
         
         lastWeatherData = { ...current, fetchTime: new Date() };
+        lastWeatherFetchAt = Date.now();
         updateWeather();
-        displayWeather(current);
+        displayWeather(current, weatherLabel);
       } catch (err) {
         console.error("Weather fetch failed:", err);
         weatherContent.innerHTML = '<div class="loading" style="color: #dc2626;">Unable to fetch weather data</div>';
@@ -2953,7 +2999,7 @@
       return dirs[Math.round(angle / 22.5) % 16];
     }
 
-    function displayWeather(current) {
+    function displayWeather(current, locationLabel = LOCATION.name) {
       const tempF = (current.temperature_2m * 9/5 + 32).toFixed(1);
       const feelsLikeF = (current.apparent_temperature * 9/5 + 32).toFixed(1);
       const humidity = current.relative_humidity_2m;
@@ -2968,7 +3014,7 @@
 
       weatherContent.innerHTML = `
         <div class="weather-section">
-          <h4>Current Conditions at ${LOCATION.name}</h4>
+          <h4>Current Conditions at ${locationLabel}</h4>
           <div class="weather-item">
             <strong>Temperature:</strong>
             <span>${tempF}°F</span>
