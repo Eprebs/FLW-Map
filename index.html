@@ -1732,10 +1732,44 @@
       });
     }
 
-    // Double-click to place waypoint (desktop)
-    map.on('dblclick', (e) => {
-      showWaypointModal(e.latlng);
-    });
+    // Desktop waypoint placement uses robust click-pair detection below.
+
+    let lastMapClickAt = 0;
+    let lastMapClickPoint = null;
+    const mapContainer = map.getContainer();
+
+    mapContainer.addEventListener('click', (evt) => {
+      if (measuring) return;
+
+      const target = evt.target;
+      if (!target) return;
+      if (target.closest && (
+        target.closest('#drawer') ||
+        target.closest('#drawerToggle') ||
+        target.closest('.leaflet-control') ||
+        target.closest('.leaflet-popup') ||
+        target.closest('#accountModalBackdrop') ||
+        target.closest('#modalBackdrop')
+      )) {
+        return;
+      }
+
+      const now = Date.now();
+      const point = map.mouseEventToContainerPoint(evt);
+      const isQuickSecondClick = now - lastMapClickAt < 350;
+      const isNearPrevious = lastMapClickPoint && point.distanceTo(lastMapClickPoint) < 18;
+
+      if (isQuickSecondClick && isNearPrevious) {
+        const latlng = map.mouseEventToLatLng(evt);
+        showWaypointModal(latlng);
+        lastMapClickAt = 0;
+        lastMapClickPoint = null;
+        return;
+      }
+
+      lastMapClickAt = now;
+      lastMapClickPoint = point;
+    }, true);
 
     // Long-press to place waypoint (mobile)
     let longPressTimer = null;
