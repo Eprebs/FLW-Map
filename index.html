@@ -1162,6 +1162,21 @@
         });
 
         if (requestId !== lastContoursRequestId) return;
+
+        const hasRemoteFeatures = Boolean(
+          remoteData &&
+          remoteData.type === 'FeatureCollection' &&
+          Array.isArray(remoteData.features) &&
+          remoteData.features.length > 0
+        );
+
+        if (!hasRemoteFeatures) {
+          console.warn('Remote contours returned no features; using local fallback.');
+          await loadLocalContoursData();
+          renderContoursLayer(null);
+          return;
+        }
+
         renderContoursLayer(remoteData);
       } catch (err) {
         console.warn('Remote contours unavailable; using local fallback.', err);

@@ -12,6 +12,24 @@ pip install -r requirements-geodata.txt
 
 Use any hosted Postgres with PostGIS enabled (Neon + PostGIS, Supabase, Render Postgres + PostGIS extension, etc.).
 
+### Easiest path (no GDAL/geopandas required)
+
+If you hit `gdal-config` / `pyogrio` build errors, use this lightweight seeder instead:
+
+```bash
+pip install psycopg2-binary
+python scripts/seed_contours_geojson_postgis.py \
+  --db-url "postgresql://USER:PASSWORD@HOST:5432/DBNAME" \
+  --input "contours_med.geojson" "contours_high.geojson" \
+  --table public.contours \
+  --if-exists replace
+```
+
+Notes:
+- This script only needs plain GeoJSON files and PostGIS.
+- It auto-creates the table, spatial index, and runs `ANALYZE`.
+- It accepts `postgres://`, `postgresql://`, or `postgresql+psycopg2://` URLs.
+
 ### Example command
 
 ```bash
@@ -29,6 +47,12 @@ python scripts/seed_contours_postgis.py \
 
 ## 3) Run contours API (FastAPI)
 
+For cloud deployment (Render/Railway/Fly), install API-only deps to avoid GDAL build failures:
+
+```bash
+pip install -r requirements-contours-api.txt
+```
+
 Set env vars:
 
 - `POSTGIS_URL=postgresql+psycopg2://...`
@@ -41,6 +65,11 @@ Start API:
 ```bash
 uvicorn geodata.contours_api:app --host 0.0.0.0 --port 8000
 ```
+
+### Render settings (recommended)
+
+- Build Command: `pip install -r requirements-contours-api.txt`
+- Start Command: `uvicorn geodata.contours_api:app --host 0.0.0.0 --port $PORT`
 
 ### Query route
 

@@ -1,15 +1,19 @@
 import os
 import re
+import json
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, Query
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
 
 DATABASE_URL = os.getenv("POSTGIS_URL", "")
 CONTOURS_TABLE = os.getenv("CONTOURS_TABLE", "public.contours")
 GEOM_COLUMN = os.getenv("CONTOURS_GEOM_COLUMN", "geom")
 MAX_FEATURES = int(os.getenv("CONTOURS_MAX_FEATURES", "20000"))
+ALLOW_LOCAL_CONTOUR_SEED = os.getenv("ALLOW_LOCAL_CONTOUR_SEED", "false").lower() in {"1", "true", "yes"}
 
 TABLE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 COLUMN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -25,6 +29,7 @@ if not COLUMN_PATTERN.match(GEOM_COLUMN):
 
 engine = create_engine(DATABASE_URL, future=True)
 app = FastAPI(title="Hunt AO Contours API")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def parse_bbox(bbox: str):
@@ -47,9 +52,61 @@ def parse_bbox(bbox: str):
     return min_lng, min_lat, max_lng, max_lat
 
 
+def _load_local_features(source: str):
+    source_map = {
+        "med": [PROJECT_ROOT / "contours_med.geojson"],
+        "high": [PROJECT_ROOT / "contours_high.geojson"],
+        "both": [PROJECT_ROOT / "contours_med.geojson", PROJECT_ROOT / "contours_high.geojson"],
+    }
+
+    files = source_map.get(source)
+    if not files:
+        raise HTTPException(status_code=400, detail="source must be one of: med, high, both")
+
+    features = []
+    for path in files:
+        if not path.exists():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        file_features = payload.get("features") if isinstance(payload, dict) else None
+        if isinstance(file_features, list):
+            features.extend(file_features)
+    return features
+
+
 @app.get("/health")
 def health() -> Dict[str, Any]:
-    return {"ok": True, "table": CONTOURS_TABLE}
+    status: Dict[str, Any] = {"ok": True, "table": CONTOURS_TABLE}
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            exists_sql = text(
+                """
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM information_schema.tables
+                  WHERE table_schema = :schema_name AND table_name = :table_name
+                ) AS table_exists
+                """
+            )
+            schema_name, table_name = (
+                CONTOURS_TABLE.split(".", 1) if "." in CONTOURS_TABLE else ("public", CONTOURS_TABLE)
+            )
+            row = conn.execute(
+                exists_sql,
+                {"schema_name": schema_name, "table_name": table_name},
+            ).first()
+            table_exists = bool(row.table_exists) if row else False
+            status["table_exists"] = table_exists
+            if not table_exists:
+                status["ok"] = False
+                status["warning"] = "Contours table not found; run seeding script."
+    except SQLAlchemyError as err:
+        status["ok"] = False
+        status["error"] = f"Database connectivity issue: {err.__class__.__name__}"
+
+    return status
 
 
 @app.get("/api/contours")
@@ -96,19 +153,109 @@ def get_contours(
     )
 
     with engine.connect() as conn:
-        row = conn.execute(
-            sql,
-            {
-                "min_lng": min_lng,
-                "min_lat": min_lat,
-                "max_lng": max_lng,
-                "max_lat": max_lat,
-                "limit": limit,
-                "simplify": simplify,
-            },
-        ).first()
+        try:
+            row = conn.execute(
+                sql,
+                {
+                    "min_lng": min_lng,
+                    "min_lat": min_lat,
+                    "max_lng": max_lng,
+                    "max_lat": max_lat,
+                    "limit": limit,
+                    "simplify": simplify,
+                },
+            ).first()
+        except SQLAlchemyError as err:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Contours backend not ready: {err.__class__.__name__}",
+            ) from err
 
     if not row:
         return {"type": "FeatureCollection", "features": []}
 
     return row.fc
+
+
+@app.get("/admin/seed-local-contours")
+@app.post("/admin/seed-local-contours")
+def seed_local_contours(source: str = Query("med", description="med, high, or both")):
+    if not ALLOW_LOCAL_CONTOUR_SEED:
+        raise HTTPException(status_code=403, detail="Local seeding is disabled")
+
+    features = _load_local_features(source)
+    if not features:
+        raise HTTPException(status_code=400, detail="No local contour features found for requested source")
+
+    schema_name, table_name = (
+        CONTOURS_TABLE.split(".", 1) if "." in CONTOURS_TABLE else ("public", CONTOURS_TABLE)
+    )
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
+            conn.execute(
+                text(
+                    f'''
+                    CREATE TABLE IF NOT EXISTS "{schema_name}"."{table_name}" (
+                        id BIGSERIAL PRIMARY KEY,
+                        properties JSONB,
+                        elev DOUBLE PRECISION,
+                        {GEOM_COLUMN} geometry(Geometry, 4326)
+                    )
+                    '''
+                )
+            )
+            conn.execute(text(f'TRUNCATE TABLE "{schema_name}"."{table_name}"'))
+
+            insert_sql = text(
+                f'''
+                INSERT INTO "{schema_name}"."{table_name}" (properties, elev, {GEOM_COLUMN})
+                VALUES (
+                    CAST(:properties AS JSONB),
+                    :elev,
+                    ST_SetSRID(ST_GeomFromGeoJSON(:geometry), 4326)
+                )
+                '''
+            )
+
+            inserted = 0
+            for feature in features:
+                geometry = feature.get("geometry")
+                if not geometry:
+                    continue
+                properties = feature.get("properties") or {}
+                elev_value = None
+                for key in ("elev", "ELEV", "elevation", "Elevation", "contour", "CONTOUR"):
+                    if key in properties:
+                        try:
+                            elev_value = float(properties[key])
+                        except (TypeError, ValueError):
+                            elev_value = None
+                        break
+
+                conn.execute(
+                    insert_sql,
+                    {
+                        "properties": json.dumps(properties),
+                        "elev": elev_value,
+                        "geometry": json.dumps(geometry),
+                    },
+                )
+                inserted += 1
+
+            conn.execute(
+                text(
+                    f'CREATE INDEX IF NOT EXISTS "{table_name}_geom_gix" '
+                    f'ON "{schema_name}"."{table_name}" USING GIST ({GEOM_COLUMN})'
+                )
+            )
+            conn.execute(text(f'ANALYZE "{schema_name}"."{table_name}"'))
+    except SQLAlchemyError as err:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to seed local contours: {err.__class__.__name__}",
+        ) from err
+
+    return {"ok": True, "source": source, "inserted": inserted, "table": CONTOURS_TABLE}
