@@ -1023,7 +1023,7 @@
 
     // Overlays: Vector-based contour lines (OnX style)
     const CONTOURS_API_BASE = String(window.HUNTAO_CONTOURS_API_BASE || "").trim().replace(/\/$/, "");
-    const HILLSHADE_TILE_URL = String(window.HUNTAO_HILLSHADE_URL || "").trim() || "./hillshade_tiles/{z}/{x}/{y}.png";
+    const HILLSHADE_TILE_URL = String(window.HUNTAO_HILLSHADE_URL || "").trim() || "https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png";
 
     let contoursMedData = null;
     let contoursHighData = null;
