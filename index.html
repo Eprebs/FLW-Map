@@ -1524,20 +1524,136 @@
     });
 
     const imageryDateInfo = document.getElementById("imageryDateInfo");
+    const ESRI_IMAGERY_IDENTIFY_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/identify";
+    let currentBasemap = "satellite";
+    let imageryDateLookupTimer = null;
+    let imageryDateLookupController = null;
+    let lastImageryLookupKey = "";
+
+    function parseImageryDateFromAttributes(attributes = {}) {
+      const srcDate2 = String(attributes["SRC_DATE2"] || "").trim();
+      if (srcDate2) {
+        const parsed = new Date(srcDate2);
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+
+      const yyyymmdd = String(attributes["DATE (YYYYMMDD)"] || "").trim();
+      if (/^\d{8}$/.test(yyyymmdd)) {
+        const year = Number(yyyymmdd.slice(0, 4));
+        const month = Number(yyyymmdd.slice(4, 6));
+        const day = Number(yyyymmdd.slice(6, 8));
+        const parsed = new Date(Date.UTC(year, month - 1, day));
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+
+      return null;
+    }
+
+    function formatImageryDate(dateValue) {
+      if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
+        return "Unknown";
+      }
+      return dateValue.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "2-digit"
+      });
+    }
+
+    async function updateSatelliteImageryDateAtCenter() {
+      if (!imageryDateInfo || currentBasemap !== "satellite") return;
+
+      const center = map.getCenter();
+      const bounds = map.getBounds();
+      const mapSize = map.getSize();
+      const lookupKey = `${center.lat.toFixed(5)},${center.lng.toFixed(5)},${map.getZoom()}`;
+      if (lookupKey === lastImageryLookupKey) return;
+      lastImageryLookupKey = lookupKey;
+
+      imageryDateInfo.textContent = "Imagery date near center: checking...";
+
+      if (imageryDateLookupController) {
+        imageryDateLookupController.abort();
+      }
+      imageryDateLookupController = new AbortController();
+
+      const params = new URLSearchParams({
+        f: "pjson",
+        geometry: `${center.lng},${center.lat}`,
+        geometryType: "esriGeometryPoint",
+        sr: "4326",
+        tolerance: "2",
+        mapExtent: `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`,
+        imageDisplay: `${Math.max(1, Math.round(mapSize.x))},${Math.max(1, Math.round(mapSize.y))},96`,
+        returnGeometry: "false"
+      });
+
+      try {
+        const response = await fetch(`${ESRI_IMAGERY_IDENTIFY_URL}?${params.toString()}`, {
+          cache: "no-store",
+          signal: imageryDateLookupController.signal
+        });
+        if (!response.ok) {
+          throw new Error(`Imagery metadata failed: ${response.status}`);
+        }
+        const payload = await response.json();
+        const first = Array.isArray(payload?.results) && payload.results.length > 0 ? payload.results[0] : null;
+        const attrs = first?.attributes || {};
+
+        const imageryDate = parseImageryDateFromAttributes(attrs);
+        const source = String(attrs.SOURCE || attrs.SOURCE_INFO || "Unknown source").trim();
+        const resolution = String(attrs["RESOLUTION (M)"] || "").trim();
+
+        if (!imageryDate) {
+          imageryDateInfo.textContent = "Imagery date near center: unavailable for this location.";
+          return;
+        }
+
+        const details = [];
+        if (source) details.push(source);
+        if (resolution) details.push(`${resolution}m`);
+        const suffix = details.length ? ` (${details.join(", ")})` : "";
+        imageryDateInfo.textContent = `Imagery date near center: ${formatImageryDate(imageryDate)}${suffix}`;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+        imageryDateInfo.textContent = "Imagery date near center: unavailable right now.";
+      }
+    }
+
+    function scheduleSatelliteImageryDateUpdate() {
+      if (imageryDateLookupTimer) {
+        clearTimeout(imageryDateLookupTimer);
+      }
+      imageryDateLookupTimer = setTimeout(() => {
+        updateSatelliteImageryDateAtCenter();
+      }, 450);
+    }
 
     function updateBasemapDateInfo(value) {
       if (!imageryDateInfo) return;
       switch (value) {
         case "satellite":
-          imageryDateInfo.textContent = "Imagery date: ESRI World Imagery varies by location/zoom; no single capture date.";
+          imageryDateInfo.textContent = "Imagery date near center: checking...";
+          scheduleSatelliteImageryDateUpdate();
           break;
         default:
           imageryDateInfo.textContent = "Imagery date: N/A for this basemap (not satellite imagery).";
+          if (imageryDateLookupController) {
+            imageryDateLookupController.abort();
+          }
+          if (imageryDateLookupTimer) {
+            clearTimeout(imageryDateLookupTimer);
+          }
           break;
       }
     }
 
     function setBasemap(value) {
+      currentBasemap = value;
       [satellite, osm, usgsTopo, esriTopo, otmTopo].forEach(l => map.removeLayer(l));
       switch (value) {
         case "satellite": satellite.addTo(map); break;
@@ -1550,6 +1666,11 @@
     }
 
     updateBasemapDateInfo("satellite");
+    map.on("moveend", () => {
+      if (currentBasemap === "satellite") {
+        scheduleSatelliteImageryDateUpdate();
+      }
+    });
 
     // -----------------------------
     // HUD + GPS
