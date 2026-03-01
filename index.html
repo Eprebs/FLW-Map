@@ -226,7 +226,7 @@
       margin-top: 4px;
     }
 
-    select, input[type="number"], input[type="text"] {
+    input[type="number"], input[type="text"] {
       width: 100%;
       padding: 4px;
       margin-top: 2px;
@@ -236,6 +236,41 @@
       color: var(--text);
       font-size: 13px;
       box-sizing: border-box;
+    }
+
+    select {
+      width: 100%;
+      margin-top: 4px;
+      min-height: 38px;
+      padding: 8px 34px 8px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(127, 148, 163, 0.42);
+      background-color: rgba(15, 23, 29, 0.88);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      box-sizing: border-box;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background-image:
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01)),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='%23ff7f36' d='M1.6 3.4a.9.9 0 0 1 1.27 0L6 6.52 9.13 3.4a.9.9 0 1 1 1.27 1.27L6.64 8.43a.9.9 0 0 1-1.27 0L1.6 4.67a.9.9 0 0 1 0-1.27z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat, no-repeat;
+      background-position: 0 0, right 10px center;
+      background-size: auto, 12px 12px;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: rgba(255, 127, 54, 0.72);
+      box-shadow: 0 0 0 2px rgba(255, 106, 26, 0.22);
+    }
+
+    select option {
+      background: #172129;
+      color: var(--text);
     }
 
     /* HUD bottom-right */
