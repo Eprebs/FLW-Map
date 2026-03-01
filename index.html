@@ -1023,7 +1023,7 @@
 
     // Overlays: Vector-based contour lines (OnX style)
     const CONTOURS_API_BASE = String(window.HUNTAO_CONTOURS_API_BASE || "").trim().replace(/\/$/, "");
-    const HILLSHADE_TILE_URL = String(window.HUNTAO_HILLSHADE_URL || "").trim() || "https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png";
+    const HILLSHADE_TILE_URL = String(window.HUNTAO_HILLSHADE_URL || "").trim() || "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
 
     let contoursMedData = null;
     let contoursHighData = null;
@@ -1197,9 +1197,9 @@
     const hillshadeLayer = L.tileLayer(
       HILLSHADE_TILE_URL,
       {
-        maxZoom: 17,
+        maxZoom: 19,
         opacity: 0.4,
-        attribution: HILLSHADE_TILE_URL.includes('hillshade_tiles') ? "Local Hillshade" : "Hillshade",
+        attribution: HILLSHADE_TILE_URL.includes('hillshade_tiles') ? "Local Hillshade" : "World Hillshade",
         className: "hillshade-layer"
       }
     );
@@ -1392,6 +1392,7 @@
     let currentPosition = null;
     let gpsMarker = null;
     let gpsAccuracyCircle = null;
+    let didCenterOnInitialGps = false;
     let lastWeatherFetchAt = 0;
     let lastWeatherData = null;
     let currentWind = { speed: 0, direction: 0, angle: 0 };
@@ -1402,9 +1403,9 @@
       if (!gpsMarker) {
         gpsMarker = L.circleMarker(latlng, {
           radius: 7,
-          color: "#111111",
+          color: "#11161a",
           weight: 2,
-          fillColor: "#3b82f6",
+          fillColor: "#ff7f36",
           fillOpacity: 0.95,
           pane: "markerPane"
         }).addTo(map);
@@ -1415,10 +1416,10 @@
       if (!gpsAccuracyCircle) {
         gpsAccuracyCircle = L.circle(latlng, {
           radius: accuracy || 0,
-          color: "#3b82f6",
+          color: "#ff7f36",
           weight: 1,
           opacity: 0.55,
-          fillColor: "#3b82f6",
+          fillColor: "#ff7f36",
           fillOpacity: 0.12,
           interactive: false
         }).addTo(map);
@@ -1448,6 +1449,11 @@
           hudAccuracy.textContent = `Accuracy: ${accuracy ? accuracy.toFixed(0) + " m" : "---"}`;
           hudCurrentArea.textContent = `Area: ${getCurrentArea(latitude, longitude)}`;
           updateGpsVisuals(latitude, longitude, accuracy);
+
+          if (!didCenterOnInitialGps) {
+            map.setView([latitude, longitude], Math.max(map.getZoom(), 15));
+            didCenterOnInitialGps = true;
+          }
 
           if (!lastWeatherData || Date.now() - lastWeatherFetchAt > 10 * 60 * 1000) {
             fetchWeather().catch(err => console.warn("Weather refresh from GPS update failed:", err));
