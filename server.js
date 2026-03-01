@@ -497,7 +497,7 @@ function buildUsersOverviewHtml(store) {
 
       function updateVisibleCount(visible, total) {
         if (!visibleCount) return;
-        visibleCount.textContent = `Showing ${visible} of ${total}`;
+        visibleCount.textContent = 'Showing ' + visible + ' of ' + total;
       }
 
       function applyFilter() {
