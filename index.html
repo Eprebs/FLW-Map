@@ -835,6 +835,16 @@
         Open: --, Closed: --, Signed in: --
       </div>
     </div>
+
+    <h3>Bases</h3>
+    <div class="drawer-section">
+      <label class="drawer-label">
+        Select Base
+        <select id="baseSelect">
+          <option value="fort_leonard_wood" selected>Fort Leonard Wood</option>
+        </select>
+      </label>
+    </div>
   </div>
 
   <div id="hud">
@@ -1085,9 +1095,19 @@
     // -----------------------------
     // Basic map setup
     // -----------------------------
+    const BASE_LOCATIONS = {
+      fort_leonard_wood: {
+        label: "Fort Leonard Wood",
+        center: [37.75, -92.15],
+        zoom: 12
+      }
+    };
+
+    const DEFAULT_BASE_ID = "fort_leonard_wood";
+
     const map = L.map("map", {
-      center: [37.75, -92.15],
-      zoom: 12,
+      center: BASE_LOCATIONS[DEFAULT_BASE_ID].center,
+      zoom: BASE_LOCATIONS[DEFAULT_BASE_ID].zoom,
       zoomControl: false
     });
 
@@ -1377,6 +1397,7 @@
     const hudCurrentArea = document.getElementById("hudCurrentArea");
     const hudTime = document.getElementById("hudTime");
     const hudWeather = document.getElementById("hudWeather");
+    const baseSelect = document.getElementById("baseSelect");
 
     let areaFeatures = []; // Store loaded area features for point-in-polygon
 
@@ -1497,6 +1518,18 @@
     let lastWeatherData = null;
     let currentWind = { speed: 0, direction: 0, angle: 0 };
 
+    function goToBase(baseId) {
+      const base = BASE_LOCATIONS[baseId];
+      if (!base) return;
+      map.setView(base.center, base.zoom);
+    }
+
+    if (baseSelect) {
+      baseSelect.addEventListener("change", () => {
+        goToBase(baseSelect.value);
+      });
+    }
+
     function updateGpsVisuals(latitude, longitude, accuracy) {
       const latlng = L.latLng(latitude, longitude);
 
@@ -1563,7 +1596,28 @@
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
       );
     }
+
+    function centerOnCurrentLocationOnce() {
+      if (!navigator.geolocation || didCenterOnInitialGps) return;
+
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const { latitude, longitude, accuracy } = pos.coords;
+          currentPosition = [latitude, longitude];
+          hudLocation.textContent = `Lat: ${latitude.toFixed(5)}, Lng: ${longitude.toFixed(5)}`;
+          hudAccuracy.textContent = `Accuracy: ${accuracy ? accuracy.toFixed(0) + " m" : "---"}`;
+          hudCurrentArea.textContent = `Area: ${getCurrentArea(latitude, longitude)}`;
+          updateGpsVisuals(latitude, longitude, accuracy);
+          map.setView([latitude, longitude], Math.max(map.getZoom(), 15));
+          didCenterOnInitialGps = true;
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 60000, timeout: 12000 }
+      );
+    }
+
     startGPS();
+    centerOnCurrentLocationOnce();
 
     const gpsFollowBtn = document.getElementById("gpsFollowBtn");
     gpsFollowBtn.addEventListener("click", () => {
