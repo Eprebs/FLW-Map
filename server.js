@@ -817,7 +817,14 @@ const server = http.createServer(async (req, res) => {
 
       sendJson(res, 201, {
         token,
-        user: { id: user.id, email: user.email, fullName: user.fullName, emailVerified: user.emailVerified },
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          emailVerified: user.emailVerified,
+          liabilityAcknowledged: user.liabilityAcknowledged === true,
+          liabilityAcknowledgedAt: user.liabilityAcknowledgedAt || ""
+        },
         verificationRequired: true,
         emailDelivery,
         ...(NODE_ENV === "production" ? {} : { verificationLink })
@@ -869,7 +876,14 @@ const server = http.createServer(async (req, res) => {
       const token = createToken({ uid: user.id, email: user.email, exp: Date.now() + TOKEN_TTL_MS });
       sendJson(res, 200, {
         token,
-        user: { id: user.id, email: user.email, fullName: user.fullName || "", emailVerified: user.emailVerified !== false }
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName || "",
+          emailVerified: user.emailVerified !== false,
+          liabilityAcknowledged: user.liabilityAcknowledged === true,
+          liabilityAcknowledgedAt: user.liabilityAcknowledgedAt || ""
+        }
       });
     } catch (err) {
       sendJson(res, 400, { error: String(err.message || err) });
@@ -901,6 +915,42 @@ const server = http.createServer(async (req, res) => {
         liabilityAcknowledgedAt: user.liabilityAcknowledgedAt || ""
       }
     });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/auth/liability-ack") {
+    try {
+      const auth = getAuthUser(req);
+      if (!auth) {
+        sendJson(res, 401, { error: "Unauthorized" });
+        return;
+      }
+
+      const body = await parseBody(req);
+      if (body.accepted !== true) {
+        sendJson(res, 400, { error: "accepted:true is required." });
+        return;
+      }
+
+      const store = readDataStore();
+      const user = store.users.find(u => u.id === auth.uid);
+      if (!user) {
+        sendJson(res, 401, { error: "Unauthorized" });
+        return;
+      }
+
+      user.liabilityAcknowledged = true;
+      user.liabilityAcknowledgedAt = new Date().toISOString();
+      writeDataStore(store);
+
+      sendJson(res, 200, {
+        ok: true,
+        liabilityAcknowledged: true,
+        liabilityAcknowledgedAt: user.liabilityAcknowledgedAt
+      });
+    } catch (err) {
+      sendJson(res, 400, { error: String(err.message || err) });
+    }
     return;
   }
 

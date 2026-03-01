@@ -459,7 +459,7 @@
       position: fixed;
       inset: 0;
       background: rgba(6, 10, 13, 0.9);
-      display: flex;
+      display: none;
       align-items: center;
       justify-content: center;
       z-index: 5000;
@@ -1860,6 +1860,23 @@
       liabilityGate.style.display = "none";
     }
 
+    function syncLiabilityGateForCurrentSession() {
+      const signedInWithAcknowledgment = Boolean(
+        authToken && currentUser && currentUser.liabilityAcknowledged === true
+      );
+
+      if (signedInWithAcknowledgment) {
+        liabilityAccepted = true;
+        liabilityGate.style.display = "none";
+        liabilityDeclineNote.textContent = "";
+        return;
+      }
+
+      if (!liabilityAccepted) {
+        openLiabilityGate();
+      }
+    }
+
     function showResetPanel() {
       resetPasswordPanel.style.display = "block";
     }
@@ -2033,19 +2050,24 @@
     async function initializeAuthFromToken() {
       if (!authToken) {
         setAuthUi();
+        syncLiabilityGateForCurrentSession();
         return;
       }
       try {
         const data = await apiFetch("/api/auth/me", { method: "GET" });
         currentUser = data.user;
+        liabilityAccepted = currentUser?.liabilityAcknowledged === true;
         setAuthUi();
         await loadCloudSync();
+        syncLiabilityGateForCurrentSession();
       } catch {
         authToken = "";
         currentUser = null;
         localStorage.removeItem(AUTH_TOKEN_KEY);
+        liabilityAccepted = false;
         setAuthUi();
         setSyncStatus("idle");
+        syncLiabilityGateForCurrentSession();
       }
     }
 
@@ -2095,7 +2117,13 @@
           body: JSON.stringify({ email, password, fullName, liabilityAccepted: liabilityAccepted === true })
         });
         authToken = data.token;
-        currentUser = data.user;
+        currentUser = {
+          ...(data.user || {}),
+          liabilityAcknowledged: true,
+          liabilityAcknowledgedAt: data.user?.liabilityAcknowledgedAt || new Date().toISOString()
+        };
+        liabilityAccepted = true;
+        liabilityGate.style.display = "none";
         localStorage.setItem(AUTH_TOKEN_KEY, authToken);
         authEmailInput.value = email;
         authPasswordInput.value = "";
@@ -2128,7 +2156,13 @@
           body: JSON.stringify({ email, password, liabilityAccepted: liabilityAccepted === true })
         });
         authToken = data.token;
-        currentUser = data.user;
+        currentUser = {
+          ...(data.user || {}),
+          liabilityAcknowledged: true,
+          liabilityAcknowledgedAt: data.user?.liabilityAcknowledgedAt || new Date().toISOString()
+        };
+        liabilityAccepted = true;
+        liabilityGate.style.display = "none";
         localStorage.setItem(AUTH_TOKEN_KEY, authToken);
         setAuthUi();
         await loadCloudSync();
@@ -2207,10 +2241,24 @@
 
     setAuthUi();
     setSyncStatus("idle");
-    openLiabilityGate();
+    liabilityGate.style.display = "none";
     liabilityAcknowledge.addEventListener("change", updateLiabilityGateState);
-    liabilityAgreeBtn.addEventListener("click", () => {
+    liabilityAgreeBtn.addEventListener("click", async () => {
       closeLiabilityGate();
+      if (!authToken) return;
+      try {
+        const data = await apiFetch("/api/auth/liability-ack", {
+          method: "POST",
+          body: JSON.stringify({ accepted: true })
+        });
+        if (currentUser) {
+          currentUser.liabilityAcknowledged = true;
+          currentUser.liabilityAcknowledgedAt = data?.liabilityAcknowledgedAt || new Date().toISOString();
+          setAuthUi();
+        }
+      } catch (err) {
+        console.warn("Could not persist liability acknowledgment", err);
+      }
     });
     liabilityDeclineBtn.addEventListener("click", () => {
       liabilityAccepted = false;
@@ -2218,6 +2266,9 @@
       liabilityAcknowledge.checked = false;
       updateLiabilityGateState();
     });
+    if (!authToken) {
+      openLiabilityGate();
+    }
   prefillResetFromUrl();
 
     // -----------------------------
