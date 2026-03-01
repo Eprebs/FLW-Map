@@ -874,10 +874,6 @@
         Satellite (ESRI)
       </label>
       <label class="drawer-label">
-        <input type="radio" name="basemap" value="leafOff">
-        Latest Leaf-Off (USGS)
-      </label>
-      <label class="drawer-label">
         <input type="radio" name="basemap" value="osm">
         Streets (OSM)
       </label>
@@ -1265,11 +1261,6 @@
       { maxZoom: 19, attribution: "ESRI World Imagery" }
     );
 
-    const leafOffImagery = L.tileLayer(
-      "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
-      { maxZoom: 19, attribution: "USGS Imagery (latest; leaf-off where available)" }
-    );
-
     const osm = L.tileLayer(
       "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
       { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }
@@ -1530,10 +1521,9 @@
     });
 
     function setBasemap(value) {
-      [satellite, leafOffImagery, osm, usgsTopo, esriTopo, otmTopo].forEach(l => map.removeLayer(l));
+      [satellite, osm, usgsTopo, esriTopo, otmTopo].forEach(l => map.removeLayer(l));
       switch (value) {
         case "satellite": satellite.addTo(map); break;
-        case "leafOff": leafOffImagery.addTo(map); break;
         case "osm": osm.addTo(map); break;
         case "usgs": usgsTopo.addTo(map); break;
         case "esri": esriTopo.addTo(map); break;
