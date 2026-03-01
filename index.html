@@ -455,6 +455,91 @@
       line-height: 1.4;
     }
 
+    #liabilityGate {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 10, 13, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5000;
+      padding: 14px;
+      box-sizing: border-box;
+    }
+
+    .liability-card {
+      width: min(680px, 96vw);
+      max-height: 90vh;
+      overflow-y: auto;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--glass-strong);
+      background-image: var(--topo-pattern);
+      background-size: 420px auto;
+      padding: 18px;
+      box-shadow: 0 18px 46px rgba(0, 0, 0, 0.56);
+    }
+
+    .liability-title {
+      margin: 0 0 8px 0;
+      font-size: 20px;
+      color: var(--gold-strong);
+    }
+
+    .liability-text {
+      margin: 0 0 10px 0;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.52;
+    }
+
+    .liability-list {
+      margin: 0 0 12px 18px;
+      padding: 0;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.52;
+    }
+
+    .liability-list li {
+      margin: 0 0 6px 0;
+    }
+
+    .liability-ack {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.45;
+    }
+
+    .liability-ack input {
+      margin-top: 2px;
+      accent-color: var(--blaze-strong);
+    }
+
+    .liability-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    #liabilityAgreeBtn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    #liabilityDeclineNote {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--slate-muted);
+      min-height: 16px;
+    }
+
     .auth-row {
       display: flex;
       gap: 8px;
@@ -898,6 +983,28 @@
   </div>
 
   <div id="offlineIndicator">📦 Offline Map Available</div>
+
+  <div id="liabilityGate" role="dialog" aria-modal="true" aria-labelledby="liabilityTitle">
+    <div class="liability-card">
+      <h2 id="liabilityTitle" class="liability-title">Boundary & Liability Acknowledgment Required</h2>
+      <p class="liability-text">This app provides boundary and area status information as a guide only. Boundaries, overlays, and status updates may have inaccuracies, delays, or GPS drift. You are solely responsible for confirming where you are and whether your intended area is legally open before signing in.</p>
+      <ul class="liability-list">
+        <li>If you are near a boundary, verify both neighboring areas directly from official sources and posted signs before checking in.</li>
+        <li>If you are on or crossing a boundary edge, ensure both areas are open and sign into both areas as required by local/installation rules.</li>
+        <li>Do not rely on this app as the sole authority for legal access, boundaries, or compliance decisions.</li>
+        <li>By continuing, you accept full responsibility for your own location, sign-in actions, and legal compliance, and you release HuntAO and its operators from liability related to boundary/sign-in errors or resulting citations.</li>
+      </ul>
+      <label class="liability-ack" for="liabilityAcknowledge">
+        <input id="liabilityAcknowledge" type="checkbox">
+        <span>I understand and agree to the Boundary & Liability Acknowledgment above.</span>
+      </label>
+      <div class="liability-actions">
+        <button id="liabilityAgreeBtn" class="drawer-btn" disabled>I Agree — Enter App</button>
+        <button id="liabilityDeclineBtn" class="modal-btn secondary">I Do Not Agree</button>
+      </div>
+      <div id="liabilityDeclineNote"></div>
+    </div>
+  </div>
 
   <div id="activityModal">
     <div id="activityPanel">
@@ -1689,6 +1796,11 @@
     // -----------------------------
     const authStatus = document.getElementById("authStatus");
     const syncStatus = document.getElementById("syncStatus");
+    const liabilityGate = document.getElementById("liabilityGate");
+    const liabilityAcknowledge = document.getElementById("liabilityAcknowledge");
+    const liabilityAgreeBtn = document.getElementById("liabilityAgreeBtn");
+    const liabilityDeclineBtn = document.getElementById("liabilityDeclineBtn");
+    const liabilityDeclineNote = document.getElementById("liabilityDeclineNote");
     const openAccountModalBtn = document.getElementById("openAccountModalBtn");
     const accountModalBackdrop = document.getElementById("accountModalBackdrop");
     const accountModalClose = document.getElementById("accountModalClose");
@@ -1725,9 +1837,27 @@
     let authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
     let currentUser = null;
     let syncSaveTimer = null;
+    let liabilityAccepted = false;
 
     function setSyncStatus(text) {
       syncStatus.textContent = `Sync status: ${text}`;
+    }
+
+    function updateLiabilityGateState() {
+      liabilityAgreeBtn.disabled = !liabilityAcknowledge.checked;
+    }
+
+    function openLiabilityGate() {
+      liabilityAccepted = false;
+      liabilityAcknowledge.checked = false;
+      liabilityDeclineNote.textContent = "";
+      updateLiabilityGateState();
+      liabilityGate.style.display = "flex";
+    }
+
+    function closeLiabilityGate() {
+      liabilityAccepted = true;
+      liabilityGate.style.display = "none";
     }
 
     function showResetPanel() {
@@ -1756,6 +1886,11 @@
     }
 
     function openLoginModal() {
+      if (!liabilityAccepted) {
+        alert("You must accept the Boundary & Liability Acknowledgment before using HuntAO.");
+        openLiabilityGate();
+        return;
+      }
       setAccountModalMode();
       accountModalBackdrop.style.display = "flex";
       if (currentUser) {
@@ -1957,7 +2092,7 @@
         profileFullName.value = fullName;
         const data = await apiFetch("/api/auth/signup", {
           method: "POST",
-          body: JSON.stringify({ email, password, fullName })
+          body: JSON.stringify({ email, password, fullName, liabilityAccepted: liabilityAccepted === true })
         });
         authToken = data.token;
         currentUser = data.user;
@@ -1990,7 +2125,7 @@
         const password = authPasswordInput.value;
         const data = await apiFetch("/api/auth/login", {
           method: "POST",
-          body: JSON.stringify({ email, password })
+          body: JSON.stringify({ email, password, liabilityAccepted: liabilityAccepted === true })
         });
         authToken = data.token;
         currentUser = data.user;
@@ -2072,6 +2207,17 @@
 
     setAuthUi();
     setSyncStatus("idle");
+    openLiabilityGate();
+    liabilityAcknowledge.addEventListener("change", updateLiabilityGateState);
+    liabilityAgreeBtn.addEventListener("click", () => {
+      closeLiabilityGate();
+    });
+    liabilityDeclineBtn.addEventListener("click", () => {
+      liabilityAccepted = false;
+      liabilityDeclineNote.textContent = "Access is blocked until you acknowledge and agree.";
+      liabilityAcknowledge.checked = false;
+      updateLiabilityGateState();
+    });
   prefillResetFromUrl();
 
     // -----------------------------

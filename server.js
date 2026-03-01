@@ -228,6 +228,8 @@ function ensureDefaultTemplateFile() {
     <tr><th>Full Name</th><td>{{full_name}}</td></tr>
     <tr><th>Created At</th><td>{{created_at}}</td></tr>
     <tr><th>Last Login</th><td>{{last_login_at}}</td></tr>
+    <tr><th>Liability Acknowledged</th><td>{{liability_acknowledged}}</td></tr>
+    <tr><th>Liability Acknowledged At</th><td>{{liability_acknowledged_at}}</td></tr>
     <tr><th>Phone</th><td>{{phone}}</td></tr>
     <tr><th>Vehicle</th><td>{{vehicle}}</td></tr>
     <tr><th>Emergency Contact</th><td>{{emergency_contact}}</td></tr>
@@ -384,7 +386,9 @@ function buildUsersCsv(users = []) {
     "email",
     "full_name",
     "created_at",
-    "last_login_at"
+    "last_login_at",
+    "liability_acknowledged",
+    "liability_acknowledged_at"
   ].join(",");
 
   const rows = users.map(u =>
@@ -393,7 +397,9 @@ function buildUsersCsv(users = []) {
       escapeCsv(u.email),
       escapeCsv(u.fullName || ""),
       escapeCsv(u.createdAt || ""),
-      escapeCsv(u.lastLoginAt || "")
+      escapeCsv(u.lastLoginAt || ""),
+      escapeCsv(u.liabilityAcknowledged ? "yes" : "no"),
+      escapeCsv(u.liabilityAcknowledgedAt || "")
     ].join(",")
   );
 
@@ -409,12 +415,14 @@ function buildUsersOverviewHtml(store) {
       const waypoints = Array.isArray(sync.waypoints) ? sync.waypoints : [];
       const tracks = Array.isArray(sync.tracks) ? sync.tracks : [];
 
-      return `<tr>
+      return `<tr data-liability="${user.liabilityAcknowledged ? "yes" : "no"}">
         <td>${escapeHtml(user.id || "")}</td>
         <td>${escapeHtml(user.email || "")}</td>
         <td>${escapeHtml(profile.fullName || user.fullName || "")}</td>
         <td>${escapeHtml(user.createdAt || "")}</td>
         <td>${escapeHtml(user.lastLoginAt || "")}</td>
+        <td>${user.liabilityAcknowledged ? "Yes" : "No"}</td>
+        <td>${escapeHtml(user.liabilityAcknowledgedAt || "")}</td>
         <td>${escapeHtml(profile.phone || "")}</td>
         <td>${escapeHtml(profile.vehicle || "")}</td>
         <td>${escapeHtml(profile.emergencyContact || "")}</td>
@@ -434,8 +442,11 @@ function buildUsersOverviewHtml(store) {
     body { font-family: Arial, sans-serif; margin: 20px; color: #111; }
     h1 { margin: 0 0 8px 0; }
     .muted { color: #666; margin-bottom: 14px; }
+    .filters { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 12px; }
+    .filters select { padding: 6px 8px; font-size: 12px; }
+    .filters .count { color: #555; }
     .wrap { overflow-x: auto; border: 1px solid #ddd; border-radius: 6px; }
-    table { border-collapse: collapse; width: 100%; min-width: 1200px; }
+    table { border-collapse: collapse; width: 100%; min-width: 1360px; }
     th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; vertical-align: top; }
     th { background: #f6f6f6; position: sticky; top: 0; z-index: 1; }
     .empty { padding: 20px; color: #666; }
@@ -444,6 +455,15 @@ function buildUsersOverviewHtml(store) {
 <body>
   <h1>HuntAO Admin Users Overview</h1>
   <div class="muted">Generated: ${escapeHtml(new Date().toISOString())} • Total users: ${users.length}</div>
+  <div class="filters">
+    <label for="liabilityFilter"><strong>Acknowledged:</strong></label>
+    <select id="liabilityFilter">
+      <option value="all">All</option>
+      <option value="yes">Yes</option>
+      <option value="no">No</option>
+    </select>
+    <span id="visibleCount" class="count"></span>
+  </div>
   <div class="wrap">
     <table>
       <thead>
@@ -453,6 +473,8 @@ function buildUsersOverviewHtml(store) {
           <th>Full Name</th>
           <th>Created At</th>
           <th>Last Login</th>
+          <th>Liability Acknowledged</th>
+          <th>Liability Acknowledged At</th>
           <th>Phone</th>
           <th>Vehicle</th>
           <th>Emergency Contact</th>
@@ -461,11 +483,44 @@ function buildUsersOverviewHtml(store) {
           <th>Tracks</th>
         </tr>
       </thead>
-      <tbody>
-        ${rows || '<tr><td class="empty" colspan="11">No users found.</td></tr>'}
+      <tbody id="usersTableBody">
+        ${rows || '<tr><td class="empty" colspan="13">No users found.</td></tr>'}
       </tbody>
     </table>
   </div>
+  <script>
+    (function () {
+      const filter = document.getElementById('liabilityFilter');
+      const body = document.getElementById('usersTableBody');
+      const visibleCount = document.getElementById('visibleCount');
+      const rowList = Array.from(body ? body.querySelectorAll('tr[data-liability]') : []);
+
+      function updateVisibleCount(visible, total) {
+        if (!visibleCount) return;
+        visibleCount.textContent = `Showing ${visible} of ${total}`;
+      }
+
+      function applyFilter() {
+        if (!filter || !body) return;
+        const selected = String(filter.value || 'all');
+        let visible = 0;
+
+        rowList.forEach(row => {
+          const value = String(row.getAttribute('data-liability') || 'no');
+          const show = selected === 'all' || selected === value;
+          row.style.display = show ? '' : 'none';
+          if (show) visible += 1;
+        });
+
+        updateVisibleCount(visible, rowList.length);
+      }
+
+      if (filter) {
+        filter.addEventListener('change', applyFilter);
+      }
+      updateVisibleCount(rowList.length, rowList.length);
+    })();
+  </script>
 </body>
 </html>`;
 }
@@ -571,6 +626,12 @@ function normalizeUserRecord(user) {
   if (!Object.prototype.hasOwnProperty.call(user, "passwordResetExpiresAt")) {
     user.passwordResetExpiresAt = "";
   }
+  if (typeof user.liabilityAcknowledged !== "boolean") {
+    user.liabilityAcknowledged = false;
+  }
+  if (!Object.prototype.hasOwnProperty.call(user, "liabilityAcknowledgedAt")) {
+    user.liabilityAcknowledgedAt = "";
+  }
 }
 
 // Helper: serve static files
@@ -665,7 +726,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && pathname === "/api/auth/signup") {
     try {
-      const { email, password, fullName = "" } = await parseBody(req);
+      const { email, password, fullName = "", liabilityAccepted = false } = await parseBody(req);
       const normalizedEmail = String(email || "").trim().toLowerCase();
       const ip = getClientIp(req);
       const signupLimiter = consumeRateLimit(`signup:${ip}`, AUTH_RATE_LIMIT_MAX, AUTH_RATE_LIMIT_WINDOW_MS);
@@ -680,6 +741,10 @@ const server = http.createServer(async (req, res) => {
       }
       if (!password || String(password).length < 8) {
         sendJson(res, 400, { error: "Password must be at least 8 characters." });
+        return;
+      }
+      if (liabilityAccepted !== true) {
+        sendJson(res, 400, { error: "You must acknowledge the Boundary & Liability terms before creating an account." });
         return;
       }
 
@@ -700,6 +765,8 @@ const server = http.createServer(async (req, res) => {
         passwordHash,
         createdAt: new Date().toISOString(),
         lastLoginAt: new Date().toISOString(),
+        liabilityAcknowledged: true,
+        liabilityAcknowledgedAt: new Date().toISOString(),
         emailVerified: false,
         emailVerificationTokenHash: "",
         emailVerificationExpiresAt: "",
@@ -763,7 +830,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && pathname === "/api/auth/login") {
     try {
-      const { email, password } = await parseBody(req);
+      const { email, password, liabilityAccepted = false } = await parseBody(req);
       const normalizedEmail = String(email || "").trim().toLowerCase();
       const ip = getClientIp(req);
       const loginLimiter = consumeRateLimit(`login:${ip}:${normalizedEmail}`, AUTH_RATE_LIMIT_MAX, AUTH_RATE_LIMIT_WINDOW_MS);
@@ -789,8 +856,14 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 403, { error: "Email not verified. Please verify your email before logging in.", code: "EMAIL_NOT_VERIFIED" });
         return;
       }
+      if (liabilityAccepted !== true) {
+        sendJson(res, 400, { error: "You must acknowledge the Boundary & Liability terms before logging in." });
+        return;
+      }
 
       user.lastLoginAt = new Date().toISOString();
+      user.liabilityAcknowledged = true;
+      user.liabilityAcknowledgedAt = new Date().toISOString();
       writeDataStore(store);
 
       const token = createToken({ uid: user.id, email: user.email, exp: Date.now() + TOKEN_TTL_MS });
@@ -823,7 +896,9 @@ const server = http.createServer(async (req, res) => {
         id: user.id,
         email: user.email,
         fullName: user.fullName || "",
-        emailVerified: user.emailVerified !== false
+        emailVerified: user.emailVerified !== false,
+        liabilityAcknowledged: user.liabilityAcknowledged === true,
+        liabilityAcknowledgedAt: user.liabilityAcknowledgedAt || ""
       }
     });
     return;
@@ -1151,6 +1226,8 @@ const server = http.createServer(async (req, res) => {
       full_name: profile.fullName || user.fullName || "",
       created_at: user.createdAt || "",
       last_login_at: user.lastLoginAt || "",
+      liability_acknowledged: user.liabilityAcknowledged ? "yes" : "no",
+      liability_acknowledged_at: user.liabilityAcknowledgedAt || "",
       phone: profile.phone || "",
       vehicle: profile.vehicle || "",
       emergency_contact: profile.emergencyContact || "",
