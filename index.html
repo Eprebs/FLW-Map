@@ -889,6 +889,9 @@
         <input type="radio" name="basemap" value="otm">
         OpenTopoMap
       </label>
+      <div id="imageryDateInfo" class="drawer-info" style="margin-top: 6px;">
+        Imagery date: ESRI World Imagery varies by location/zoom; no single capture date.
+      </div>
     </div>
 
     <h3>Terrain Overlays</h3>
@@ -1520,6 +1523,20 @@
       radio.addEventListener("change", () => setBasemap(radio.value));
     });
 
+    const imageryDateInfo = document.getElementById("imageryDateInfo");
+
+    function updateBasemapDateInfo(value) {
+      if (!imageryDateInfo) return;
+      switch (value) {
+        case "satellite":
+          imageryDateInfo.textContent = "Imagery date: ESRI World Imagery varies by location/zoom; no single capture date.";
+          break;
+        default:
+          imageryDateInfo.textContent = "Imagery date: N/A for this basemap (not satellite imagery).";
+          break;
+      }
+    }
+
     function setBasemap(value) {
       [satellite, osm, usgsTopo, esriTopo, otmTopo].forEach(l => map.removeLayer(l));
       switch (value) {
@@ -1529,7 +1546,10 @@
         case "esri": esriTopo.addTo(map); break;
         case "otm": otmTopo.addTo(map); break;
       }
+      updateBasemapDateInfo(value);
     }
+
+    updateBasemapDateInfo("satellite");
 
     // -----------------------------
     // HUD + GPS
