@@ -438,12 +438,6 @@
       font-size: 13px;
     }
 
-    #signedInActions {
-      margin-top: 14px;
-      border-top: 1px solid var(--border);
-      padding-top: 12px;
-    }
-
     /* Activity Forecast Modal */
     #activityModal {
       position: fixed;
@@ -795,10 +789,6 @@
         Download Offline Area
       </button>
 
-      <button id="manageOfflineBtn" class="drawer-btn">
-        Manage Offline Packs
-      </button>
-
       <label class="drawer-label">
         <input type="checkbox" id="includeSatelliteToggle">
         Include Satellite Tiles
@@ -905,29 +895,43 @@
   <div id="accountModalBackdrop" class="modal-backdrop">
     <div class="modal auth-modal">
       <h3 class="auth-modal-title">
-        Sign In
+        Account
         <button id="accountModalClose" class="modal-btn secondary" style="padding: 4px 8px;">✕</button>
       </h3>
-      <p class="auth-subtitle">Access your synced waypoints and tracks.</p>
+      <p id="authModalSubtitle" class="auth-subtitle">Access your synced waypoints and tracks.</p>
 
-      <label class="auth-field">
-        Username
-        <input id="authEmailInput" type="text" placeholder="you@example.com" autocomplete="email">
-      </label>
+      <div id="signedOutAccountSection">
+        <label class="auth-field">
+          Username
+          <input id="authEmailInput" type="text" placeholder="you@example.com" autocomplete="email">
+        </label>
 
-      <label class="auth-field">
-        Password
-        <input id="authPasswordInput" type="password" placeholder="Enter password" autocomplete="current-password">
-      </label>
+        <label class="auth-field">
+          Password
+          <input id="authPasswordInput" type="password" placeholder="Enter password" autocomplete="current-password">
+        </label>
 
-      <button id="loginBtn" class="drawer-btn">Log In</button>
+        <button id="loginBtn" class="drawer-btn">Log In</button>
 
-      <div class="auth-row">
-        <button id="requestResetBtn" class="modal-btn secondary">Reset Password</button>
-        <button id="openSignupModalBtn" class="modal-btn secondary">Create Account</button>
+        <div class="auth-row">
+          <button id="requestResetBtn" class="modal-btn secondary">Reset Password</button>
+          <button id="openSignupModalBtn" class="modal-btn secondary">Create Account</button>
+        </div>
+
+        <div class="auth-note">Use your email as username. Reset sends a secure link to your email.</div>
       </div>
 
-      <div class="auth-note">Use your email as username. Reset sends a secure link to your email.</div>
+      <div id="signedInAccountSection" style="display: none;">
+        <div class="auth-note" style="margin-top: 0;">Signed in as <strong id="signedInEmailLabel"></strong></div>
+        <div class="auth-row" style="margin-top: 0;">
+          <button id="requestResetSignedInBtn" class="modal-btn secondary">Reset Password</button>
+          <button id="logoutBtn" class="modal-btn secondary">Logout</button>
+        </div>
+        <div class="auth-row">
+          <button id="manageOfflineBtn" class="modal-btn secondary">Manage Offline Packs</button>
+          <button id="syncNowBtn" class="modal-btn secondary">Sync Now</button>
+        </div>
+      </div>
 
       <div id="resetPasswordPanel" style="display: none; margin-top: 8px;">
         <label class="auth-field">
@@ -940,14 +944,6 @@
           <input id="newPasswordInput" type="password" placeholder="Set new password">
         </label>
         <button id="resetPasswordBtn" class="drawer-btn">Set New Password</button>
-      </div>
-
-      <div id="signedInActions" style="display: none;">
-        <div class="auth-note" style="margin-top: 0;">Signed in tools</div>
-        <div class="auth-row" style="margin-top: 0;">
-          <button id="syncNowBtn" class="modal-btn secondary">Sync Now</button>
-          <button id="logoutBtn" class="modal-btn secondary">Logout</button>
-        </div>
       </div>
 
       <input id="profileFullName" type="hidden" value="">
@@ -1617,6 +1613,11 @@
     const signupPasswordInput = document.getElementById("signupPasswordInput");
     const signupFullNameInput = document.getElementById("signupFullNameInput");
     const requestResetBtn = document.getElementById("requestResetBtn");
+    const requestResetSignedInBtn = document.getElementById("requestResetSignedInBtn");
+    const signedOutAccountSection = document.getElementById("signedOutAccountSection");
+    const signedInAccountSection = document.getElementById("signedInAccountSection");
+    const signedInEmailLabel = document.getElementById("signedInEmailLabel");
+    const authModalSubtitle = document.getElementById("authModalSubtitle");
     const resetPasswordPanel = document.getElementById("resetPasswordPanel");
     const resetTokenInput = document.getElementById("resetTokenInput");
     const newPasswordInput = document.getElementById("newPasswordInput");
@@ -1625,7 +1626,6 @@
     const loginBtn = document.getElementById("loginBtn");
     const logoutBtn = document.getElementById("logoutBtn");
     const syncNowBtn = document.getElementById("syncNowBtn");
-    const signedInActions = document.getElementById("signedInActions");
     const profileFullName = document.getElementById("profileFullName");
     const profilePhone = document.getElementById("profilePhone");
     const profileVehicle = document.getElementById("profileVehicle");
@@ -1645,13 +1645,40 @@
       resetPasswordPanel.style.display = "block";
     }
 
+    function hideResetPanel() {
+      resetPasswordPanel.style.display = "none";
+      resetTokenInput.value = "";
+      newPasswordInput.value = "";
+    }
+
+    function setAccountModalMode() {
+      const isSignedIn = Boolean(currentUser && authToken);
+      signedOutAccountSection.style.display = isSignedIn ? "none" : "block";
+      signedInAccountSection.style.display = isSignedIn ? "block" : "none";
+
+      if (isSignedIn) {
+        authModalSubtitle.textContent = "Manage your account session and offline packs.";
+        signedInEmailLabel.textContent = currentUser.email || "";
+        authEmailInput.value = currentUser.email || authEmailInput.value;
+      } else {
+        authModalSubtitle.textContent = "Access your synced waypoints and tracks.";
+        signedInEmailLabel.textContent = "";
+      }
+    }
+
     function openLoginModal() {
+      setAccountModalMode();
       accountModalBackdrop.style.display = "flex";
-      authEmailInput.focus();
+      if (currentUser) {
+        requestResetSignedInBtn.focus();
+      } else {
+        authEmailInput.focus();
+      }
     }
 
     function closeLoginModal() {
       accountModalBackdrop.style.display = "none";
+      hideResetPanel();
     }
 
     function openSignupModal() {
@@ -1667,13 +1694,12 @@
       if (currentUser) {
         const verified = currentUser.emailVerified === false ? " (unverified)" : "";
         authStatus.textContent = `Signed in: ${currentUser.email}${verified}`;
-        signedInActions.style.display = "block";
         openAccountModalBtn.textContent = "Open Account";
       } else {
         authStatus.textContent = "Not signed in";
-        signedInActions.style.display = "none";
         openAccountModalBtn.textContent = "Open Login";
       }
+      setAccountModalMode();
     }
 
     openAccountModalBtn.addEventListener("click", () => {
@@ -1816,6 +1842,24 @@
       }
     }
 
+    async function requestPasswordResetFor(email) {
+      const normalized = String(email || "").trim();
+      if (!normalized) {
+        alert("Enter your email first.");
+        return;
+      }
+
+      const data = await apiFetch("/api/auth/request-password-reset", {
+        method: "POST",
+        body: JSON.stringify({ email: normalized })
+      });
+      if (data.resetLink) {
+        console.info("Dev reset link:", data.resetLink);
+      }
+      showResetPanel();
+      alert(data.message || "If the email exists, reset instructions were sent.");
+    }
+
     signupBtn.addEventListener("click", async () => {
       try {
         const email = signupEmailInput.value.trim();
@@ -1873,20 +1917,15 @@
 
     requestResetBtn.addEventListener("click", async () => {
       try {
-        const email = authEmailInput.value.trim();
-        if (!email) {
-          alert("Enter your email first.");
-          return;
-        }
-        const data = await apiFetch("/api/auth/request-password-reset", {
-          method: "POST",
-          body: JSON.stringify({ email })
-        });
-        if (data.resetLink) {
-          console.info("Dev reset link:", data.resetLink);
-        }
-        showResetPanel();
-        alert(data.message || "If the email exists, reset instructions were sent.");
+        await requestPasswordResetFor(authEmailInput.value.trim());
+      } catch (err) {
+        alert(`Could not request password reset: ${err.message}`);
+      }
+    });
+
+    requestResetSignedInBtn.addEventListener("click", async () => {
+      try {
+        await requestPasswordResetFor(currentUser?.email || authEmailInput.value.trim());
       } catch (err) {
         alert(`Could not request password reset: ${err.message}`);
       }
@@ -1919,12 +1958,11 @@
       signupEmailInput.value = "";
       signupPasswordInput.value = "";
       signupFullNameInput.value = "";
-      resetTokenInput.value = "";
-      newPasswordInput.value = "";
-      resetPasswordPanel.style.display = "none";
+      hideResetPanel();
       setProfileFields({});
       setAuthUi();
       setSyncStatus("idle");
+      closeLoginModal();
     });
 
     syncNowBtn.addEventListener("click", async () => {
