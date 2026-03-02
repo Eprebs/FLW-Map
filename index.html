@@ -874,6 +874,10 @@
         Satellite (ESRI)
       </label>
       <label class="drawer-label">
+        <input type="checkbox" id="satelliteStreetLabelsToggle" checked>
+        Street Names on Satellite
+      </label>
+      <label class="drawer-label">
         <input type="radio" name="basemap" value="osm">
         Streets (OSM)
       </label>
@@ -1264,6 +1268,16 @@
       { maxZoom: 19, attribution: "ESRI World Imagery" }
     );
 
+    const satelliteRoadsOverlay = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: "ESRI Reference" }
+    );
+
+    const satelliteLabelsOverlay = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: "ESRI Reference" }
+    );
+
     const osm = L.tileLayer(
       "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
       { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }
@@ -1523,6 +1537,7 @@
       radio.addEventListener("change", () => setBasemap(radio.value));
     });
 
+    const satelliteStreetLabelsToggle = document.getElementById("satelliteStreetLabelsToggle");
     const imageryDateInfo = document.getElementById("imageryDateInfo");
     const ESRI_IMAGERY_IDENTIFY_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/identify";
     let currentBasemap = "satellite";
@@ -1662,10 +1677,27 @@
         case "esri": esriTopo.addTo(map); break;
         case "otm": otmTopo.addTo(map); break;
       }
+      updateSatelliteStreetLabelsOverlay();
       updateBasemapDateInfo(value);
     }
 
+    function updateSatelliteStreetLabelsOverlay() {
+      const shouldShow = currentBasemap === "satellite" && Boolean(satelliteStreetLabelsToggle?.checked);
+      if (shouldShow) {
+        if (!map.hasLayer(satelliteRoadsOverlay)) satelliteRoadsOverlay.addTo(map);
+        if (!map.hasLayer(satelliteLabelsOverlay)) satelliteLabelsOverlay.addTo(map);
+      } else {
+        if (map.hasLayer(satelliteRoadsOverlay)) map.removeLayer(satelliteRoadsOverlay);
+        if (map.hasLayer(satelliteLabelsOverlay)) map.removeLayer(satelliteLabelsOverlay);
+      }
+    }
+
+    if (satelliteStreetLabelsToggle) {
+      satelliteStreetLabelsToggle.addEventListener("change", updateSatelliteStreetLabelsOverlay);
+    }
+
     updateBasemapDateInfo("satellite");
+    updateSatelliteStreetLabelsOverlay();
     map.on("moveend", () => {
       if (currentBasemap === "satellite") {
         scheduleSatelliteImageryDateUpdate();
