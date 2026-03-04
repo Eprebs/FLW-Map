@@ -3826,11 +3826,22 @@
           : LOCATION.name;
 
         // Open-Meteo API (free, no key needed)
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${weatherLat}&longitude=${weatherLng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&timezone=auto`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${weatherLat}&longitude=${weatherLng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&daily=sunrise,sunset&timezone=auto`;
         
         const response = await fetch(url);
         const data = await response.json();
         const current = data.current;
+        const sunriseIso = data?.daily?.sunrise?.[0] || "";
+        const sunsetIso = data?.daily?.sunset?.[0] || "";
+
+        const legalStart = shiftIsoLikeMinutes(sunriseIso, -30);
+        const legalEnd = shiftIsoLikeMinutes(sunsetIso, 30);
+        const sunData = {
+          sunrise: formatIsoLikeTime(sunriseIso),
+          sunset: formatIsoLikeTime(sunsetIso),
+          legalStart: formatIsoLikeTime(legalStart),
+          legalEnd: formatIsoLikeTime(legalEnd)
+        };
         
         // Store wind data globally for waypoints
         currentWind = {
@@ -3842,11 +3853,46 @@
         lastWeatherData = { ...current, fetchTime: new Date() };
         lastWeatherFetchAt = Date.now();
         updateWeather();
-        displayWeather(current, weatherLabel);
+        displayWeather(current, weatherLabel, sunData);
       } catch (err) {
         console.error("Weather fetch failed:", err);
         weatherContent.innerHTML = '<div class="loading" style="color: #dc2626;">Unable to fetch weather data</div>';
       }
+    }
+
+    function formatIsoLikeTime(isoLike) {
+      if (!isoLike || typeof isoLike !== "string") return "N/A";
+
+      const timePart = isoLike.includes("T") ? isoLike.split("T")[1] : isoLike;
+      const parts = timePart.split(":");
+      const hours24 = Number(parts[0]);
+      const minutes = Number(parts[1]);
+
+      if (!Number.isFinite(hours24) || !Number.isFinite(minutes)) return "N/A";
+
+      const period = hours24 >= 12 ? "PM" : "AM";
+      const hours12 = hours24 % 12 || 12;
+      return `${hours12}:${String(minutes).padStart(2, "0")} ${period}`;
+    }
+
+    function shiftIsoLikeMinutes(isoLike, minuteDelta) {
+      if (!isoLike || typeof isoLike !== "string") return "";
+
+      const [datePart, timePartRaw] = isoLike.split("T");
+      if (!datePart || !timePartRaw) return "";
+
+      const timeParts = timePartRaw.split(":");
+      const hours = Number(timeParts[0]);
+      const minutes = Number(timeParts[1]);
+      if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return "";
+
+      const minutesInDay = 24 * 60;
+      let totalMinutes = (hours * 60 + minutes) + minuteDelta;
+      totalMinutes = Math.max(0, Math.min(minutesInDay - 1, totalMinutes));
+
+      const shiftedHours = Math.floor(totalMinutes / 60);
+      const shiftedMinutes = totalMinutes % 60;
+      return `${datePart}T${String(shiftedHours).padStart(2, "0")}:${String(shiftedMinutes).padStart(2, "0")}`;
     }
 
     function getWeatherDescription(code) {
@@ -3884,7 +3930,7 @@
       return dirs[Math.round(angle / 22.5) % 16];
     }
 
-    function displayWeather(current, locationLabel = LOCATION.name) {
+    function displayWeather(current, locationLabel = LOCATION.name, sunData = null) {
       const tempF = (current.temperature_2m * 9/5 + 32).toFixed(1);
       const feelsLikeF = (current.apparent_temperature * 9/5 + 32).toFixed(1);
       const humidity = current.relative_humidity_2m;
@@ -3937,6 +3983,24 @@
           <div class="weather-item">
             <strong>Precipitation:</strong>
             <span>${precipIn.toFixed(2)} in</span>
+          </div>
+        </div>
+        <div class="weather-section">
+          <h4>Sun & Legal Hours</h4>
+          <div class="weather-item">
+            <strong>Sunrise:</strong>
+            <span>${sunData?.sunrise || "N/A"}</span>
+          </div>
+          <div class="weather-item">
+            <strong>Sunset:</strong>
+            <span>${sunData?.sunset || "N/A"}</span>
+          </div>
+          <div class="weather-item">
+            <strong>Legal Shooting:</strong>
+            <span>${(sunData?.legalStart && sunData?.legalEnd) ? `${sunData.legalStart} - ${sunData.legalEnd}` : "N/A"}</span>
+          </div>
+          <div style="margin-top: 8px; font-size: 11px; color: var(--muted); line-height: 1.4;">
+            General guidance shown as 30 min before sunrise to 30 min after sunset. Always verify local regulations.
           </div>
         </div>
         <div class="last-updated">Updated: ${time}<br>Data from Open-Meteo</div>
