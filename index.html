@@ -1005,6 +1005,7 @@
     <div class="drawer-section">
       <button id="gpsFollowBtn" class="drawer-btn">Snap to My Location</button>
       <button id="addWaypointBtn" class="drawer-btn">Add Waypoint</button>
+      <button id="shareWaypointsBtn" class="drawer-btn">Share Pins</button>
       <button id="startTrackBtn" class="drawer-btn">Start Track</button>
       <button id="measureBtn" class="drawer-btn">Measure Distance</button>
       <button id="routingBtn" class="drawer-btn">Routing</button>
@@ -2646,6 +2647,7 @@
     let waypointLayer = L.layerGroup().addTo(map);
     let waypointRecords = [];
     const waypointVisualsById = new Map();
+    const shareWaypointsBtn = document.getElementById("shareWaypointsBtn");
     let savedTracks = [];
     let savedTrackLayers = [];
     let placingWaypoint = false;
@@ -2702,6 +2704,160 @@
       const typeLabel = waypointTypes[record.type]?.label || waypointTypes.generic.label;
       const displayName = escapeHtmlText(record.name || typeLabel);
       return `<strong>${displayName}</strong><br><small>Lat: ${record.lat.toFixed(5)}, Lng: ${record.lng.toFixed(5)}</small><br><small style="color: var(--gold-strong);">Wind: ${windMph} mph ${windDir}</small><br><small style="color: var(--muted);">Drag to move<br>Right-click to delete</small>`;
+    }
+
+    function sanitizeSharedWaypoint(wp) {
+      const lat = Number(wp?.lat);
+      const lng = Number(wp?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+      return {
+        id: String(wp?.id || crypto.randomUUID()),
+        lat,
+        lng,
+        type: String(wp?.type || "generic"),
+        name: String(wp?.name || "").slice(0, 100),
+        createdAt: String(wp?.createdAt || new Date().toISOString())
+      };
+    }
+
+    function encodeSharedWaypointsPayload(payload) {
+      const json = JSON.stringify(payload);
+      const bytes = new TextEncoder().encode(json);
+      let binary = "";
+      bytes.forEach(b => {
+        binary += String.fromCharCode(b);
+      });
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    }
+
+    function decodeSharedWaypointsPayload(encoded) {
+      const padded = encoded.replace(/-/g, "+").replace(/_/g, "/");
+      const normalized = padded + "=".repeat((4 - (padded.length % 4)) % 4);
+      const binary = atob(normalized);
+      const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    }
+
+    async function copyTextToClipboard(text) {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+
+      const temp = document.createElement("textarea");
+      temp.value = text;
+      temp.style.position = "fixed";
+      temp.style.opacity = "0";
+      document.body.appendChild(temp);
+      temp.focus();
+      temp.select();
+      document.execCommand("copy");
+      document.body.removeChild(temp);
+    }
+
+    async function shareWaypoints() {
+      if (!Array.isArray(waypointRecords) || waypointRecords.length === 0) {
+        alert("No pins to share yet.");
+        return;
+      }
+
+      const maxShared = 300;
+      const selected = waypointRecords.slice(0, maxShared).map(sanitizeSharedWaypoint).filter(Boolean);
+      if (!selected.length) {
+        alert("No valid pins available to share.");
+        return;
+      }
+
+      const payload = {
+        v: 1,
+        baseId: currentBaseId,
+        createdAt: new Date().toISOString(),
+        waypoints: selected
+      };
+
+      const encoded = encodeSharedWaypointsPayload(payload);
+      const shareUrl = `${window.location.origin}${window.location.pathname}?wps=${encodeURIComponent(encoded)}`;
+      const shareText = `Shared ${selected.length} HuntAO pin${selected.length === 1 ? "" : "s"}`;
+
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: "HuntAO Pins",
+            text: shareText,
+            url: shareUrl
+          });
+          return;
+        }
+      } catch (err) {
+        console.warn("Native share cancelled or unavailable", err);
+      }
+
+      await copyTextToClipboard(shareUrl);
+      alert("Share link copied to clipboard.");
+    }
+
+    function removeSharedWaypointsParamFromUrl() {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("wps")) return;
+      url.searchParams.delete("wps");
+      const search = url.searchParams.toString();
+      history.replaceState({}, "", `${url.pathname}${search ? `?${search}` : ""}${url.hash}`);
+    }
+
+    function importSharedWaypointsFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const encoded = params.get("wps");
+      if (!encoded) return;
+
+      try {
+        const payload = decodeSharedWaypointsPayload(encoded);
+        const incomingRaw = Array.isArray(payload?.waypoints) ? payload.waypoints : [];
+        const incoming = incomingRaw.map(sanitizeSharedWaypoint).filter(Boolean);
+
+        if (!incoming.length) {
+          removeSharedWaypointsParamFromUrl();
+          alert("This share link has no valid pins.");
+          return;
+        }
+
+        const importedBase = String(payload?.baseId || "").trim();
+        if (importedBase && INSTALLATIONS[importedBase] && importedBase !== currentBaseId) {
+          currentBaseId = importedBase;
+          if (baseSelect) baseSelect.value = importedBase;
+          goToBase(importedBase);
+          fetchAreaStatus();
+        }
+
+        const shouldReplace = confirm(
+          `Import ${incoming.length} shared pin${incoming.length === 1 ? "" : "s"}?\n\n` +
+          "OK = Replace your current pins\n" +
+          "Cancel = Keep yours and add shared pins"
+        );
+
+        if (shouldReplace) {
+          waypointRecords = incoming;
+        } else {
+          const existing = new Set(waypointRecords.map(wp => `${Number(wp.lat).toFixed(6)},${Number(wp.lng).toFixed(6)},${String(wp.name || "").trim().toUpperCase()}`));
+          for (const wp of incoming) {
+            const sig = `${Number(wp.lat).toFixed(6)},${Number(wp.lng).toFixed(6)},${String(wp.name || "").trim().toUpperCase()}`;
+            if (!existing.has(sig)) {
+              waypointRecords.push(wp);
+              existing.add(sig);
+            }
+          }
+        }
+
+        renderAllWaypoints();
+        queueSyncSave();
+        removeSharedWaypointsParamFromUrl();
+        alert("Shared pins imported.");
+      } catch (err) {
+        console.error("Failed to import shared pins", err);
+        removeSharedWaypointsParamFromUrl();
+        alert("Could not import pins from that link.");
+      }
     }
 
     function removeWaypointById(id, shouldSync = true) {
@@ -2939,6 +3095,17 @@
     addWaypointBtn.addEventListener("click", () => {
       setWaypointPlacementMode(!placingWaypoint);
     });
+
+    shareWaypointsBtn.addEventListener("click", async () => {
+      try {
+        await shareWaypoints();
+      } catch (err) {
+        console.error("Share failed", err);
+        alert("Could not create share link right now.");
+      }
+    });
+
+    importSharedWaypointsFromUrl();
 
     const startTrackBtn = document.getElementById("startTrackBtn");
     let tracking = false;
