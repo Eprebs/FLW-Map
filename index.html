@@ -2703,8 +2703,8 @@
       const windMph = ((currentWind.speed || 0) * 0.621371).toFixed(1);
       const typeLabel = waypointTypes[record.type]?.label || waypointTypes.generic.label;
       const displayName = escapeHtmlText(record.name || typeLabel);
-      const safeId = String(record.id || "").replace(/'/g, "&#039;");
-      return `<strong>${displayName}</strong><br><small>Lat: ${record.lat.toFixed(5)}, Lng: ${record.lng.toFixed(5)}</small><br><small style="color: var(--gold-strong);">Wind: ${windMph} mph ${windDir}</small><br><small style="color: var(--muted);">Drag to move<br>Right-click to delete</small><button style="display:block;width:100%;margin-top:8px;padding:6px;background:linear-gradient(180deg, rgba(42,74,64,0.95), rgba(31,58,49,0.95));color:var(--text);border:1px solid rgba(124,151,167,0.35);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;" onclick="window.shareSingleWaypointById('${safeId}')">Share This Pin</button>`;
+      const safeId = escapeHtmlText(String(record.id || ""));
+      return `<strong>${displayName}</strong><br><small>Lat: ${record.lat.toFixed(5)}, Lng: ${record.lng.toFixed(5)}</small><br><small style="color: var(--gold-strong);">Wind: ${windMph} mph ${windDir}</small><br><small style="color: var(--muted);">Drag to move<br>Right-click to delete</small><button type="button" class="share-waypoint-btn" data-waypoint-id="${safeId}" style="display:block;width:100%;margin-top:8px;padding:6px;background:linear-gradient(180deg, rgba(42,74,64,0.95), rgba(31,58,49,0.95));color:var(--text);border:1px solid rgba(124,151,167,0.35);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">Share This Pin</button>`;
     }
 
     function sanitizeSharedWaypoint(wp) {
@@ -2817,13 +2817,6 @@
       const pinName = selected[0].name ? `: ${selected[0].name}` : "";
       await shareWaypointList(selected, `Shared 1 HuntAO pin${pinName}`);
     }
-
-    window.shareSingleWaypointById = (id) => {
-      shareSingleWaypointById(id).catch(err => {
-        console.error("Single pin share failed", err);
-        alert("Could not create share link for this pin.");
-      });
-    };
 
     function removeSharedWaypointsParamFromUrl() {
       const url = new URL(window.location.href);
@@ -3130,6 +3123,24 @@
         console.error("Share failed", err);
         alert("Could not create share link right now.");
       }
+    });
+
+    document.addEventListener("click", (evt) => {
+      const btn = evt.target?.closest?.(".share-waypoint-btn");
+      if (!btn) return;
+
+      evt.preventDefault();
+      evt.stopPropagation();
+      const id = String(btn.dataset.waypointId || "").trim();
+      if (!id) {
+        alert("Could not find that pin to share.");
+        return;
+      }
+
+      shareSingleWaypointById(id).catch(err => {
+        console.error("Single pin share failed", err);
+        alert("Could not create share link for this pin.");
+      });
     });
 
     importSharedWaypointsFromUrl();
