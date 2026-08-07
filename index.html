@@ -2640,11 +2640,42 @@
     let savedTracks = [];
     let savedTrackLayers = [];
     let placingWaypoint = false;
+    const IS_TOUCH_DEVICE = ("ontouchstart" in window) || (navigator.maxTouchPoints > 0);
+    const WAYPOINT_LONG_PRESS_MS = 650;
+    const WAYPOINT_LONG_PRESS_MOVE_PX = 14;
+    const AREA_POPUP_CLICK_DELAY_MS = 220;
+    const AREA_POPUP_SUPPRESS_ZOOM_FOR_DESKTOP = 15;
+    let suppressAreaPopupUntil = 0;
 
     function setWaypointPlacementMode(enabled) {
       placingWaypoint = enabled;
       addWaypointBtn.classList.toggle("active", enabled);
-      addWaypointBtn.textContent = enabled ? "Click Map to Place..." : "Add Waypoint";
+      addWaypointBtn.textContent = enabled
+        ? (IS_TOUCH_DEVICE ? "Touch & Hold to Place..." : "Click Map to Place...")
+        : "Add Waypoint";
+    }
+
+    function openAreaPopupAt(targetLayer, latlng, popupContent) {
+      if (!latlng) return;
+      if (targetLayer._areaPopupTimer) {
+        clearTimeout(targetLayer._areaPopupTimer);
+        targetLayer._areaPopupTimer = null;
+      }
+
+      targetLayer._areaPopupTimer = setTimeout(() => {
+        if (!map || !popupContent) return;
+        L.popup({ closeButton: true, autoPan: true, className: "area-popup" })
+          .setLatLng(latlng)
+          .setContent(popupContent)
+          .openOn(map);
+      }, AREA_POPUP_CLICK_DELAY_MS);
+    }
+
+    function clearAreaPopupTimer(targetLayer) {
+      if (targetLayer && targetLayer._areaPopupTimer) {
+        clearTimeout(targetLayer._areaPopupTimer);
+        targetLayer._areaPopupTimer = null;
+      }
     }
 
     function escapeHtmlText(value) {
@@ -2824,25 +2855,76 @@
       lastMapClickPoint = point;
     }, true);
 
-    // Long-press to place waypoint (mobile)
+    // Long-press waypoint placement on touch devices, even over area overlays.
     let longPressTimer = null;
     let longPressTriggered = false;
+    let longPressStartPoint = null;
+    let longPressLatLng = null;
 
-    map.on('mousedown', (e) => {
-      longPressTriggered = false;
-      longPressTimer = setTimeout(() => {
-        longPressTriggered = true;
-        showWaypointModal(e.latlng);
-      }, 800); // 800ms long press
-    });
+    function cancelLongPress() {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      longPressStartPoint = null;
+      longPressLatLng = null;
+    }
 
-    map.on('mouseup', () => {
-      clearTimeout(longPressTimer);
-    });
+    function eventTargetIsUi(target) {
+      if (!target || !target.closest) return false;
+      return Boolean(
+        target.closest('#drawer') ||
+        target.closest('#drawerToggle') ||
+        target.closest('.leaflet-control') ||
+        target.closest('.leaflet-popup') ||
+        target.closest('#accountModalBackdrop') ||
+        target.closest('#modalBackdrop')
+      );
+    }
 
-    map.on('mousemove', () => {
-      clearTimeout(longPressTimer);
-    });
+    if (IS_TOUCH_DEVICE) {
+      mapContainer.addEventListener('touchstart', (evt) => {
+        if (measuring) return;
+        if (eventTargetIsUi(evt.target)) return;
+        if (!evt.touches || evt.touches.length !== 1) return;
+
+        longPressTriggered = false;
+        const touch = evt.touches[0];
+        longPressStartPoint = map.mouseEventToContainerPoint(touch);
+        longPressLatLng = map.mouseEventToLatLng(touch);
+
+        longPressTimer = setTimeout(() => {
+          longPressTriggered = true;
+          suppressAreaPopupUntil = Date.now() + 900;
+          map.closePopup();
+          setWaypointPlacementMode(false);
+          showWaypointModal(longPressLatLng);
+        }, WAYPOINT_LONG_PRESS_MS);
+      }, { passive: true });
+
+      mapContainer.addEventListener('touchmove', (evt) => {
+        if (!longPressTimer || !longPressStartPoint || !evt.touches || evt.touches.length !== 1) return;
+        const touch = evt.touches[0];
+        const point = map.mouseEventToContainerPoint(touch);
+        if (point.distanceTo(longPressStartPoint) > WAYPOINT_LONG_PRESS_MOVE_PX) {
+          cancelLongPress();
+        }
+      }, { passive: true });
+
+      mapContainer.addEventListener('touchend', (evt) => {
+        cancelLongPress();
+        if (longPressTriggered) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          longPressTriggered = false;
+        }
+      }, { passive: false, capture: true });
+
+      mapContainer.addEventListener('touchcancel', () => {
+        cancelLongPress();
+        longPressTriggered = false;
+      }, { passive: true });
+    }
 
     // Keep the button for manual mode (optional)
     addWaypointBtn.addEventListener("click", () => {
@@ -3527,19 +3609,21 @@
           const openText = status ? (status.Open ? "OPEN" : "CLOSED") : "UNKNOWN";
           const signedIn = getCheckedInCount(status);
 
-          layer.bindPopup(
+          const popupContent =
             `<strong>${name}</strong><br>` +
             `Type: ${displayType}<br>` +
             `Status: ${openText}<br>` +
             `Signed in: ${signedIn}<br>` +
-            signInButtonHtml
-          );
+            signInButtonHtml;
 
           const bindToolInteractions = (targetLayer) => {
             targetLayer.on("click", (e) => {
+              clearAreaPopupTimer(targetLayer);
+
               if (placingWaypoint) {
                 L.DomEvent.stop(e);
                 setWaypointPlacementMode(false);
+                map.closePopup();
                 showWaypointModal(e.latlng);
                 return;
               }
@@ -3550,17 +3634,36 @@
                 return;
               }
 
+              if (Date.now() < suppressAreaPopupUntil) {
+                L.DomEvent.stop(e);
+                return;
+              }
+
               const clickCount = Number(e?.originalEvent?.detail || 0);
               if (clickCount >= 2) {
                 L.DomEvent.stop(e);
+                suppressAreaPopupUntil = Date.now() + 500;
+                map.closePopup();
                 showWaypointModal(e.latlng);
+                return;
               }
+
+              if (!IS_TOUCH_DEVICE && map.getZoom() >= AREA_POPUP_SUPPRESS_ZOOM_FOR_DESKTOP) {
+                return;
+              }
+
+              openAreaPopupAt(targetLayer, e.latlng, popupContent);
             });
 
             targetLayer.on("dblclick", (e) => {
               L.DomEvent.stop(e);
+              clearAreaPopupTimer(targetLayer);
+              suppressAreaPopupUntil = Date.now() + 500;
+              map.closePopup();
               showWaypointModal(e.latlng);
             });
+
+            targetLayer.on("remove", () => clearAreaPopupTimer(targetLayer));
           };
 
           bindToolInteractions(layer);
@@ -3648,7 +3751,6 @@
               fillOpacity: currentAreaOpacity,
               fillPattern: archeryHatch
             });
-            poly.bindPopup(popupContent);
             if (typeof layer.bindToolInteractions === "function") {
               layer.bindToolInteractions(poly);
             }
@@ -3664,7 +3766,6 @@
               fillOpacity: currentAreaOpacity,
               fillPattern: canDots
             });
-            poly.bindPopup(popupContent);
             if (typeof layer.bindToolInteractions === "function") {
               layer.bindToolInteractions(poly);
             }
