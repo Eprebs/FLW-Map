@@ -30,8 +30,21 @@ const AUTH_RATE_LIMIT_WINDOW_MS = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS |
 const RESET_DATA_ON_BOOT = String(process.env.RESET_DATA_ON_BOOT || "false").toLowerCase() === "true";
 const ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION = String(process.env.ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION || "true").toLowerCase() === "true";
 
-// Base URL for iSportsman
-const ISPORTSMAN_BASE = "https://ftleonardwood.isportsman.net";
+// Installation-specific iSportsman origins.
+// Override these with environment variables as more bases are added.
+const ISPORTSMAN_BASES = {
+  fort_leonard_wood:
+    process.env.ISPORTSMAN_BASE_FORT_LEONARD_WOOD || "https://ftleonardwood.isportsman.net",
+  imported_installation:
+    process.env.ISPORTSMAN_BASE_IMPORTED_INSTALLATION ||
+    process.env.ISPORTSMAN_BASE_FORT_LEONARD_WOOD ||
+    "https://ftleonardwood.isportsman.net"
+};
+
+function getISportsmanBase(baseId) {
+  const key = String(baseId || "").trim().toLowerCase();
+  return ISPORTSMAN_BASES[key] || ISPORTSMAN_BASES.fort_leonard_wood;
+}
 const authRateLimitStore = new Map();
 
 function ensureDataStore() {
@@ -1463,6 +1476,9 @@ const server = http.createServer(async (req, res) => {
   // ----------------------------------------------------
   if (req.method === "GET" && pathname === "/api/areas") {
     try {
+      const requestedBaseId = String(url.searchParams.get("base") || "fort_leonard_wood").trim().toLowerCase();
+      const ISPORTSMAN_BASE = getISportsmanBase(requestedBaseId);
+
       const payload = {
         activity: "",
         area: "",

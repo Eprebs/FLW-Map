@@ -969,6 +969,7 @@
         Select Base
         <select id="baseSelect">
           <option value="fort_leonard_wood" selected>Fort Leonard Wood</option>
+          <option value="imported_installation">Imported Installation</option>
         </select>
       </label>
     </div>
@@ -1244,15 +1245,34 @@
     // -----------------------------
     // Basic map setup
     // -----------------------------
-    const BASE_LOCATIONS = {
+    const INSTALLATIONS = {
       fort_leonard_wood: {
         label: "Fort Leonard Wood",
         center: [37.75, -92.15],
-        zoom: 12
+        zoom: 12,
+        geojsonUrl: "flw_areas.backup.geojson",
+        statusBaseId: "fort_leonard_wood",
+        signInUrl: "https://ftleonardwood.isportsman.net/Login.aspx"
+      },
+      imported_installation: {
+        label: "Imported Installation",
+        center: [31.9, -81.75],
+        zoom: 11,
+        geojsonUrl: "flw_areas.geojson",
+        statusBaseId: "imported_installation",
+        signInUrl: ""
       }
     };
 
+    const BASE_LOCATIONS = Object.fromEntries(
+      Object.entries(INSTALLATIONS).map(([id, cfg]) => [
+        id,
+        { label: cfg.label, center: cfg.center, zoom: cfg.zoom }
+      ])
+    );
+
     const DEFAULT_BASE_ID = "fort_leonard_wood";
+    let currentBaseId = DEFAULT_BASE_ID;
 
     const map = L.map("map", {
       center: BASE_LOCATIONS[DEFAULT_BASE_ID].center,
@@ -1707,6 +1727,23 @@
     const hudWeather = document.getElementById("hudWeather");
     const baseSelect = document.getElementById("baseSelect");
 
+    function getCurrentInstallation() {
+      return INSTALLATIONS[currentBaseId] || INSTALLATIONS[DEFAULT_BASE_ID];
+    }
+
+    function populateBaseSelect() {
+      if (!baseSelect) return;
+      baseSelect.innerHTML = "";
+
+      Object.entries(INSTALLATIONS).forEach(([id, cfg]) => {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = cfg.label;
+        if (id === currentBaseId) option.selected = true;
+        baseSelect.appendChild(option);
+      });
+    }
+
     let areaFeatures = []; // Store loaded area features for point-in-polygon
 
     // Point-in-polygon algorithm (ray casting)
@@ -1832,9 +1869,13 @@
       map.setView(base.center, base.zoom);
     }
 
+    populateBaseSelect();
+
     if (baseSelect) {
       baseSelect.addEventListener("change", () => {
-        goToBase(baseSelect.value);
+        currentBaseId = baseSelect.value;
+        goToBase(currentBaseId);
+        fetchAreaStatus();
       });
     }
 
@@ -3172,6 +3213,108 @@
     let archeryLayerGroup = null;
     let cantonmentLayerGroup = null;
 
+    function normalizeAreaKey(value) {
+      const text = String(value || "").trim().toUpperCase();
+      if (!text) return "";
+      return text;
+    }
+
+    function expandAreaKeyCandidates(value) {
+      const base = normalizeAreaKey(value);
+      if (!base) return [];
+
+      const keys = new Set();
+      keys.add(base);
+
+      const noSpaces = base.replace(/\s+/g, "");
+      keys.add(noSpaces);
+
+      const alphaNumOnly = base.replace(/[^A-Z0-9]/g, "");
+      if (alphaNumOnly) keys.add(alphaNumOnly);
+
+      if (base.includes("-")) {
+        const suffix = base.split("-").pop();
+        if (suffix) {
+          keys.add(suffix);
+          keys.add(suffix.replace(/[^A-Z0-9]/g, ""));
+        }
+      }
+
+      const digitsOnly = alphaNumOnly.replace(/[^0-9]/g, "");
+      if (digitsOnly) {
+        const numeric = String(Number(digitsOnly));
+        if (numeric !== "NaN") keys.add(numeric);
+        if (digitsOnly.length < 3) keys.add(digitsOnly.padStart(2, "0"));
+      }
+
+      return Array.from(keys).filter(Boolean);
+    }
+
+    function buildStatusIndex(data) {
+      const statusBySyskey = new Map();
+      const statusByAreaKey = new Map();
+
+      for (const a of data) {
+        const syskey = Number(a.Area_Syskey);
+        if (Number.isFinite(syskey)) {
+          statusBySyskey.set(syskey, a);
+        }
+
+        const rawAreaFields = [
+          a.Area_ID,
+          a.AreaId,
+          a.AreaName,
+          a.Area_Name,
+          a.Area,
+          a.Name
+        ];
+
+        for (const rawValue of rawAreaFields) {
+          for (const candidate of expandAreaKeyCandidates(rawValue)) {
+            if (!statusByAreaKey.has(candidate)) {
+              statusByAreaKey.set(candidate, a);
+            }
+          }
+        }
+      }
+
+      return { statusBySyskey, statusByAreaKey };
+    }
+
+    function getFeatureStatus(feature, statusIndex) {
+      const props = feature?.properties || {};
+
+      const syskey = Number(props.area_syskey);
+      if (Number.isFinite(syskey) && statusIndex.statusBySyskey.has(syskey)) {
+        return statusIndex.statusBySyskey.get(syskey);
+      }
+
+      const candidateFields = [
+        props.area_name,
+        props._Area_ID,
+        props.area_id,
+        props.Area_ID,
+        props._label,
+        props.label
+      ];
+
+      for (const field of candidateFields) {
+        for (const candidate of expandAreaKeyCandidates(field)) {
+          if (statusIndex.statusByAreaKey.has(candidate)) {
+            return statusIndex.statusByAreaKey.get(candidate);
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function buildSignInButtonHtml() {
+      const signInUrl = String(getCurrentInstallation()?.signInUrl || "").trim();
+      if (!signInUrl) return "";
+      return `<button style="width: 100%; margin-top: 8px; padding: 6px; background: var(--gold); color: #111111; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;" onclick="window.open('${signInUrl}', '_blank')">SIGN IN</button>`;
+    }
+
     function getCheckedInCount(statusObj) {
       if (!statusObj) return 0;
       if (typeof statusObj.OccupancyUsed === "number") return statusObj.OccupancyUsed;
@@ -3197,7 +3340,8 @@
     async function fetchAreaStatus() {
       try {
         statusSummary.textContent = "Status: loading…";
-        const r = await fetch("/api/areas", { cache: "no-store" });
+        const statusBaseId = getCurrentInstallation()?.statusBaseId || currentBaseId;
+        const r = await fetch(`/api/areas?base=${encodeURIComponent(statusBaseId)}`, { cache: "no-store" });
         
         if (!r.ok) {
           statusSummary.textContent = "Status: error " + r.status;
@@ -3212,34 +3356,32 @@
         let closedCount = 0;
         let signedInTotal = 0;
 
-        const statusBySyskey = new Map();
-        
         for (const a of data) {
-          const key = Number(a.Area_Syskey);
-          statusBySyskey.set(key, a);
-
           if (a.Open === true) openCount++;
           if (a.Open === false) closedCount++;
           signedInTotal += getCheckedInCount(a);
         }
+
+        const statusIndex = buildStatusIndex(data);
         
         statusSummary.textContent = `Status: ${openCount} open, ${closedCount} closed.`;
         statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
 
-        await renderFLWAreas(statusBySyskey);
+        await renderFLWAreas(statusIndex);
       } catch (e) {
         console.error("Error in fetchAreaStatus:", e);
         statusSummary.textContent = "Status: error fetching data.";
       }
     }
 
-    async function renderFLWAreas(statusBySyskey) {
+    async function renderFLWAreas(statusIndex) {
       try {
         if (flwAreasLayer) { map.removeLayer(flwAreasLayer); flwAreasLayer = null; }
         if (archeryLayerGroup) { map.removeLayer(archeryLayerGroup); archeryLayerGroup = null; }
         if (cantonmentLayerGroup) { map.removeLayer(cantonmentLayerGroup); cantonmentLayerGroup = null; }
 
-        const r = await fetch("flw_areas.geojson", { cache: "no-store" });
+        const geojsonUrl = getCurrentInstallation()?.geojsonUrl || "flw_areas.backup.geojson";
+        const r = await fetch(geojsonUrl, { cache: "no-store" });
         
         const gj = await r.json();
         areaFeatures = gj.features;
@@ -3267,10 +3409,10 @@
         canDots.addTo(map);
 
         let currentAreaOpacity = 0.35;
+        const signInButtonHtml = buildSignInButtonHtml();
 
         function styleFeature(feature) {
-          const syskey = Number(feature?.properties?.area_syskey);
-          const status = statusBySyskey.get(syskey);
+          const status = getFeatureStatus(feature, statusIndex);
 
           let fillColor = "#6b7280";
           if (status?.Open === true) fillColor = "#16a34a";
@@ -3280,8 +3422,7 @@
         }
 
         function onEachFeature(feature, layer) {
-          const syskey = Number(feature?.properties?.area_syskey);
-          const status = statusBySyskey.get(syskey);
+          const status = getFeatureStatus(feature, statusIndex);
 
           const name = feature?.properties?.area_name || "Area";
           const typeRaw = feature?.properties?.area_type || "";
@@ -3298,7 +3439,7 @@
             `Type: ${displayType}<br>` +
             `Status: ${openText}<br>` +
             `Signed in: ${signedIn}<br>` +
-            `<button style="width: 100%; margin-top: 8px; padding: 6px; background: var(--gold); color: #111111; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;" onclick="window.open('https://ftleonardwood.isportsman.net/Login.aspx', '_blank')">SIGN IN</button>`
+            signInButtonHtml
           );
 
           const bindToolInteractions = (targetLayer) => {
@@ -3381,8 +3522,7 @@
           const t = String(f.properties.area_type || "").trim().toLowerCase();
 
           // Get popup content from the original feature
-          const syskey = Number(f?.properties?.area_syskey);
-          const status = statusBySyskey.get(syskey);
+          const status = getFeatureStatus(f, statusIndex);
           const name = f?.properties?.area_name || "Area";
           const typeRaw = f?.properties?.area_type || "";
           const typeText = String(typeRaw).trim();
