@@ -226,6 +226,13 @@
       margin-top: 4px;
     }
 
+    .status-meta {
+      font-size: 11px;
+      color: var(--slate-muted);
+      margin-top: 6px;
+      line-height: 1.35;
+    }
+
     input[type="number"], input[type="text"] {
       width: 100%;
       padding: 4px;
@@ -844,8 +851,11 @@
     /* Small screens */
     @media (max-width: 600px) {
       #hud {
-        max-width: 200px;
-        font-size: 11px;
+        max-width: 168px;
+        font-size: 10px;
+        right: 6px;
+        bottom: 56px;
+        padding: 6px 8px;
       }
       #aiPanel {
         top: 80px;
@@ -853,6 +863,31 @@
       }
       #areaLegend {
         font-size: 10px;
+        bottom: 6px;
+        left: 50%;
+        max-width: calc(100% - 128px);
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      #topRightControls {
+        right: 6px;
+        top: 6px;
+      }
+      .control-btn {
+        font-size: 11px;
+        padding: 5px 7px;
+      }
+      #offlineIndicator {
+        left: 6px;
+        bottom: 6px;
+        font-size: 11px;
+      }
+      body.drawer-open #hud,
+      body.drawer-open #areaLegend,
+      body.drawer-open #offlineIndicator,
+      body.drawer-open #topRightControls {
+        opacity: 0.2;
+        pointer-events: none;
       }
     }
   </style>
@@ -865,6 +900,18 @@
   <div id="drawer">
     <div class="drawer-brand">
       <img src="Logo2.png" alt="HuntAO">
+    </div>
+
+    <h3>Bases</h3>
+    <div class="drawer-section">
+      <label class="drawer-label">
+        Select Base
+        <select id="baseSelect">
+          <option value="fort_leonard_wood" selected>Fort Leonard Wood</option>
+          <option value="imported_installation">Fort Stewart</option>
+          <option value="fort_riley">Fort Riley</option>
+        </select>
+      </label>
     </div>
 
     <h3>Layers</h3>
@@ -961,18 +1008,10 @@
       <div id="statusCounts" class="drawer-info">
         Open: --, Closed: --, Signed in: --
       </div>
-    </div>
-
-    <h3>Bases</h3>
-    <div class="drawer-section">
-      <label class="drawer-label">
-        Select Base
-        <select id="baseSelect">
-          <option value="fort_leonard_wood" selected>Fort Leonard Wood</option>
-          <option value="imported_installation">Fort Stewart</option>
-          <option value="fort_riley">Fort Riley</option>
-        </select>
-      </label>
+      <div id="statusMeta" class="status-meta">
+        Status source: --<br>
+        Last updated: --
+      </div>
     </div>
   </div>
 
@@ -1545,16 +1584,21 @@
     const drawer = document.getElementById("drawer");
     const drawerToggle = document.getElementById("drawerToggle");
 
+    function setDrawerOpen(open) {
+      drawer.classList.toggle("open", open);
+      document.body.classList.toggle("drawer-open", open);
+    }
+
     drawerToggle.addEventListener("click", (e) => {
       e.stopPropagation();
-      drawer.classList.toggle("open");
+      setDrawerOpen(!drawer.classList.contains("open"));
     });
 
     document.addEventListener("click", (e) => {
       if (!drawer.classList.contains("open")) return;
       if (drawer.contains(e.target)) return;
       if (drawerToggle.contains(e.target)) return;
-      drawer.classList.remove("open");
+      setDrawerOpen(false);
     });
 
     document.querySelectorAll('input[name="basemap"]').forEach(radio => {
@@ -3217,6 +3261,7 @@
     const refreshStatusBtn = document.getElementById("refreshStatusBtn");
     const statusSummary = document.getElementById("statusSummary");
     const statusCounts = document.getElementById("statusCounts");
+    const statusMeta = document.getElementById("statusMeta");
 
     let flwAreasLayer = null;
     let archeryLayerGroup = null;
@@ -3349,11 +3394,17 @@
     async function fetchAreaStatus() {
       try {
         statusSummary.textContent = "Status: loading…";
+        if (statusMeta) {
+          statusMeta.innerHTML = "Status source: loading...<br>Last updated: --";
+        }
         const statusBaseId = getCurrentInstallation()?.statusBaseId || currentBaseId;
         const r = await fetch(`/api/areas?base=${encodeURIComponent(statusBaseId)}`, { cache: "no-store" });
         
         if (!r.ok) {
           statusSummary.textContent = "Status: error " + r.status;
+          if (statusMeta) {
+            statusMeta.innerHTML = "Status source: unavailable<br>Last updated: --";
+          }
           return;
         }
 
@@ -3376,10 +3427,23 @@
         statusSummary.textContent = `Status: ${openCount} open, ${closedCount} closed.`;
         statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
 
+        if (statusMeta) {
+          const sourceHost = json?.meta?.sourceHost || "unknown";
+          const fetchedAtRaw = json?.meta?.fetchedAt;
+          const fetchedAt = fetchedAtRaw ? new Date(fetchedAtRaw) : null;
+          const fetchedLabel = fetchedAt && !Number.isNaN(fetchedAt.getTime())
+            ? fetchedAt.toLocaleString()
+            : "unknown";
+          statusMeta.innerHTML = `Status source: ${sourceHost}<br>Last updated: ${fetchedLabel}`;
+        }
+
         await renderFLWAreas(statusIndex);
       } catch (e) {
         console.error("Error in fetchAreaStatus:", e);
         statusSummary.textContent = "Status: error fetching data.";
+        if (statusMeta) {
+          statusMeta.innerHTML = "Status source: unavailable<br>Last updated: --";
+        }
       }
     }
 

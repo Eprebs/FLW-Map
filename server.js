@@ -1527,7 +1527,13 @@ const server = http.createServer(async (req, res) => {
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
       });
 
-      const response = { data: raw };
+      const response = {
+        data: raw,
+        meta: {
+          sourceHost: new URL(ISPORTSMAN_BASE).host,
+          fetchedAt: new Date().toISOString()
+        }
+      };
       res.end(JSON.stringify(response));
     } catch (err) {
       console.error("Proxy error:", err);
