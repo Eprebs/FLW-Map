@@ -969,7 +969,8 @@
         Select Base
         <select id="baseSelect">
           <option value="fort_leonard_wood" selected>Fort Leonard Wood</option>
-          <option value="imported_installation">Imported Installation</option>
+          <option value="imported_installation">Fort Stewart</option>
+          <option value="fort_riley">Fort Riley</option>
         </select>
       </label>
     </div>
@@ -1261,6 +1262,14 @@
         geojsonUrl: "flw_areas.geojson",
         statusBaseId: "imported_installation",
         signInUrl: "https://ftstewart.isportsman.net/Login.aspx"
+      },
+      fort_riley: {
+        label: "Fort Riley",
+        center: [39.1717, -96.8223],
+        zoom: 11,
+        geojsonUrl: "fort_riley_areas.geojson",
+        statusBaseId: "fort_riley",
+        signInUrl: "https://fortriley.isportsman.net/Login.aspx"
       }
     };
 

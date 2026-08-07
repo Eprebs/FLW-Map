@@ -65,7 +65,13 @@ def find_featureset(obj: Any) -> Optional[Dict[str, Any]]:
 def normalize_properties(attrs: Dict[str, Any]) -> Dict[str, Any]:
     props = dict(attrs)
 
-    area_name = attrs.get("_Area_ID") or attrs.get("label") or attrs.get("Name") or attrs.get("name")
+    area_name = (
+        attrs.get("_Area_ID")
+        or attrs.get("AREA_ID")
+        or attrs.get("label")
+        or attrs.get("Name")
+        or attrs.get("name")
+    )
     area_type = attrs.get("_Type") or attrs.get("Type")
 
     raw_id = attrs.get("FID")
