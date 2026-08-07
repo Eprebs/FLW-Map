@@ -2703,7 +2703,8 @@
       const windMph = ((currentWind.speed || 0) * 0.621371).toFixed(1);
       const typeLabel = waypointTypes[record.type]?.label || waypointTypes.generic.label;
       const displayName = escapeHtmlText(record.name || typeLabel);
-      return `<strong>${displayName}</strong><br><small>Lat: ${record.lat.toFixed(5)}, Lng: ${record.lng.toFixed(5)}</small><br><small style="color: var(--gold-strong);">Wind: ${windMph} mph ${windDir}</small><br><small style="color: var(--muted);">Drag to move<br>Right-click to delete</small>`;
+      const safeId = String(record.id || "").replace(/'/g, "&#039;");
+      return `<strong>${displayName}</strong><br><small>Lat: ${record.lat.toFixed(5)}, Lng: ${record.lng.toFixed(5)}</small><br><small style="color: var(--gold-strong);">Wind: ${windMph} mph ${windDir}</small><br><small style="color: var(--muted);">Drag to move<br>Right-click to delete</small><button style="display:block;width:100%;margin-top:8px;padding:6px;background:linear-gradient(180deg, rgba(42,74,64,0.95), rgba(31,58,49,0.95));color:var(--text);border:1px solid rgba(124,151,167,0.35);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;" onclick="window.shareSingleWaypointById('${safeId}')">Share This Pin</button>`;
     }
 
     function sanitizeSharedWaypoint(wp) {
@@ -2757,19 +2758,7 @@
       document.body.removeChild(temp);
     }
 
-    async function shareWaypoints() {
-      if (!Array.isArray(waypointRecords) || waypointRecords.length === 0) {
-        alert("No pins to share yet.");
-        return;
-      }
-
-      const maxShared = 300;
-      const selected = waypointRecords.slice(0, maxShared).map(sanitizeSharedWaypoint).filter(Boolean);
-      if (!selected.length) {
-        alert("No valid pins available to share.");
-        return;
-      }
-
+    function buildShareUrlForWaypoints(selected) {
       const payload = {
         v: 1,
         baseId: currentBaseId,
@@ -2778,8 +2767,11 @@
       };
 
       const encoded = encodeSharedWaypointsPayload(payload);
-      const shareUrl = `${window.location.origin}${window.location.pathname}?wps=${encodeURIComponent(encoded)}`;
-      const shareText = `Shared ${selected.length} HuntAO pin${selected.length === 1 ? "" : "s"}`;
+      return `${window.location.origin}${window.location.pathname}?wps=${encodeURIComponent(encoded)}`;
+    }
+
+    async function shareWaypointList(selected, shareText) {
+      const shareUrl = buildShareUrlForWaypoints(selected);
 
       try {
         if (navigator.share) {
@@ -2797,6 +2789,41 @@
       await copyTextToClipboard(shareUrl);
       alert("Share link copied to clipboard.");
     }
+
+    async function shareWaypoints() {
+      if (!Array.isArray(waypointRecords) || waypointRecords.length === 0) {
+        alert("No pins to share yet.");
+        return;
+      }
+
+      const maxShared = 300;
+      const selected = waypointRecords.slice(0, maxShared).map(sanitizeSharedWaypoint).filter(Boolean);
+      if (!selected.length) {
+        alert("No valid pins available to share.");
+        return;
+      }
+
+      const shareText = `Shared ${selected.length} HuntAO pin${selected.length === 1 ? "" : "s"}`;
+      await shareWaypointList(selected, shareText);
+    }
+
+    async function shareSingleWaypointById(id) {
+      const candidate = waypointRecords.find(wp => String(wp.id) === String(id));
+      const selected = candidate ? [sanitizeSharedWaypoint(candidate)].filter(Boolean) : [];
+      if (!selected.length) {
+        alert("Could not find that pin to share.");
+        return;
+      }
+      const pinName = selected[0].name ? `: ${selected[0].name}` : "";
+      await shareWaypointList(selected, `Shared 1 HuntAO pin${pinName}`);
+    }
+
+    window.shareSingleWaypointById = (id) => {
+      shareSingleWaypointById(id).catch(err => {
+        console.error("Single pin share failed", err);
+        alert("Could not create share link for this pin.");
+      });
+    };
 
     function removeSharedWaypointsParamFromUrl() {
       const url = new URL(window.location.href);
