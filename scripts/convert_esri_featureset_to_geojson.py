@@ -62,17 +62,51 @@ def find_featureset(obj: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+def find_featureset_by_operational_layer(obj: Dict[str, Any], layer_index: int) -> Optional[Dict[str, Any]]:
+    layers = obj.get("operationalLayers")
+    if not isinstance(layers, list):
+        return None
+    if layer_index < 0 or layer_index >= len(layers):
+        return None
+
+    op_layer = layers[layer_index]
+    if not isinstance(op_layer, dict):
+        return None
+
+    feature_collection = op_layer.get("featureCollection")
+    if not isinstance(feature_collection, dict):
+        return None
+
+    fc_layers = feature_collection.get("layers")
+    if not isinstance(fc_layers, list) or not fc_layers:
+        return None
+
+    first_layer = fc_layers[0]
+    if not isinstance(first_layer, dict):
+        return None
+
+    feature_set = first_layer.get("featureSet")
+    if isinstance(feature_set, dict) and isinstance(feature_set.get("features"), list):
+        return feature_set
+
+    return None
+
+
 def normalize_properties(attrs: Dict[str, Any]) -> Dict[str, Any]:
     props = dict(attrs)
 
     area_name = (
         attrs.get("_Area_ID")
         or attrs.get("AREA_ID")
+        or attrs.get("Descriptio")
+        or attrs.get("Description")
+        or attrs.get("featureNam")
+        or attrs.get("Comment")
         or attrs.get("label")
         or attrs.get("Name")
         or attrs.get("name")
     )
-    area_type = attrs.get("_Type") or attrs.get("Type")
+    area_type = attrs.get("_Type") or attrs.get("Type") or attrs.get("featureTyp")
 
     raw_id = attrs.get("FID")
     if raw_id is None:
@@ -91,11 +125,17 @@ def normalize_properties(attrs: Dict[str, Any]) -> Dict[str, Any]:
     return props
 
 
-def convert(input_path: str, output_path: str) -> None:
+def convert(input_path: str, output_path: str, layer_index: Optional[int] = None) -> None:
     with open(input_path, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
-    featureset = find_featureset(raw)
+    featureset = None
+    if layer_index is not None and isinstance(raw, dict):
+        featureset = find_featureset_by_operational_layer(raw, layer_index)
+
+    if featureset is None:
+        featureset = find_featureset(raw)
+
     if not featureset:
         raise ValueError("Could not find a feature set with a 'features' array in the input JSON.")
 
@@ -151,9 +191,15 @@ def main() -> None:
     )
     parser.add_argument("--input", required=True, help="Path to ArcGIS JSON response file")
     parser.add_argument("--output", required=True, help="Path to output GeoJSON file")
+    parser.add_argument(
+        "--layer-index",
+        type=int,
+        default=None,
+        help="Operational layer index to extract from ArcGIS web map JSON (optional).",
+    )
     args = parser.parse_args()
 
-    convert(args.input, args.output)
+    convert(args.input, args.output, args.layer_index)
     print(f"Wrote {args.output}")
 
 

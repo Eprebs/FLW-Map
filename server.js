@@ -40,7 +40,10 @@ const ISPORTSMAN_BASES = {
     "https://ftstewart.isportsman.net",
   fort_riley:
     process.env.ISPORTSMAN_BASE_FORT_RILEY ||
-    "https://fortriley.isportsman.net"
+    "https://fortriley.isportsman.net",
+  jblm:
+    process.env.ISPORTSMAN_BASE_JBLM ||
+    "https://jblm.isportsman.net"
 };
 
 function getISportsmanBase(baseId) {
