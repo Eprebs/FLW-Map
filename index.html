@@ -76,6 +76,47 @@
       z-index: 1;
     }
 
+    #mapLoadBanner {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-10px);
+      z-index: 1002;
+      max-width: min(560px, calc(100% - 24px));
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(20, 28, 35, 0.9);
+      border: 1px solid rgba(160, 180, 194, 0.32);
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.35;
+      box-shadow: 0 10px 22px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+
+    #mapLoadBanner.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    #mapLoadBanner.warn {
+      border-color: rgba(255, 170, 84, 0.55);
+      color: #ffe0b8;
+    }
+
+    #mapLoadBanner.error {
+      border-color: rgba(248, 113, 113, 0.62);
+      color: #ffe0e0;
+    }
+
+    #mapLoadBanner.ok {
+      border-color: rgba(74, 222, 128, 0.56);
+      color: #d8ffe6;
+    }
+
     /* Drawer */
     #drawerToggle {
       position: absolute;
@@ -912,6 +953,7 @@
 </head>
 <body>
   <div id="map"></div>
+  <div id="mapLoadBanner" aria-live="polite"></div>
 
   <button id="drawerToggle">☰</button>
 
@@ -3585,11 +3627,42 @@
     const statusSummary = document.getElementById("statusSummary");
     const statusCounts = document.getElementById("statusCounts");
     const statusMeta = document.getElementById("statusMeta");
+    const mapLoadBanner = document.getElementById("mapLoadBanner");
 
     let flwAreasLayer = null;
     let archeryLayerGroup = null;
     let cantonmentLayerGroup = null;
     let areaLabelLayerGroup = null;
+    let renderedBaseId = null;
+    let mapBannerHideTimer = null;
+
+    function setMapLoadBanner(message, tone = "info", autoHideMs = 0) {
+      if (!mapLoadBanner) return;
+      if (mapBannerHideTimer) {
+        clearTimeout(mapBannerHideTimer);
+        mapBannerHideTimer = null;
+      }
+
+      if (!message) {
+        mapLoadBanner.className = "";
+        mapLoadBanner.textContent = "";
+        return;
+      }
+
+      mapLoadBanner.textContent = message;
+      mapLoadBanner.className = "show";
+      if (tone === "warn") mapLoadBanner.classList.add("warn");
+      if (tone === "error") mapLoadBanner.classList.add("error");
+      if (tone === "ok") mapLoadBanner.classList.add("ok");
+
+      if (autoHideMs > 0) {
+        mapBannerHideTimer = setTimeout(() => {
+          mapLoadBanner.className = "";
+          mapLoadBanner.textContent = "";
+          mapBannerHideTimer = null;
+        }, autoHideMs);
+      }
+    }
 
     function normalizeAreaKey(value) {
       const text = String(value || "").trim().toUpperCase();
@@ -3659,7 +3732,12 @@
       return { statusBySyskey, statusByAreaKey };
     }
 
+    function createEmptyStatusIndex() {
+      return { statusBySyskey: new Map(), statusByAreaKey: new Map() };
+    }
+
     function getFeatureStatus(feature, statusIndex) {
+      if (!statusIndex) return null;
       const props = feature?.properties || {};
 
       const syskey = Number(props.area_syskey);
@@ -3715,20 +3793,60 @@
       return 0;
     }
 
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function fetchAreaStatusResponse(statusBaseId, attempts = 2, onRetry = null) {
+      let lastError = null;
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const response = await fetch(`/api/areas?base=${encodeURIComponent(statusBaseId)}`, { cache: "no-store" });
+          if (response.ok) return response;
+          lastError = new Error(`Status API failed: ${response.status}`);
+        } catch (err) {
+          lastError = err;
+        }
+
+        if (i < attempts - 1) {
+          if (typeof onRetry === "function") {
+            onRetry(i + 1, attempts);
+          }
+          await delay(2000);
+        }
+      }
+      throw lastError || new Error("Status API request failed");
+    }
+
     async function fetchAreaStatus() {
+      let statusIndex = createEmptyStatusIndex();
       try {
         statusSummary.textContent = "Status: loading…";
         if (statusMeta) {
           statusMeta.innerHTML = "Status source: loading...<br>Last updated: --";
         }
+
+        const needsBaseRender = !flwAreasLayer || renderedBaseId !== currentBaseId;
+        if (needsBaseRender) {
+          setMapLoadBanner("Loading area boundaries...", "info");
+          await renderFLWAreas(createEmptyStatusIndex());
+        }
+
+        setMapLoadBanner("Fetching live open/closed status...", "info");
         const statusBaseId = getCurrentInstallation()?.statusBaseId || currentBaseId;
-        const r = await fetch(`/api/areas?base=${encodeURIComponent(statusBaseId)}`, { cache: "no-store" });
+        const r = await fetchAreaStatusResponse(statusBaseId, 2, (attempt, attempts) => {
+          const nextTry = attempt + 1;
+          statusSummary.textContent = `Status: retrying live status (${nextTry}/${attempts})...`;
+          setMapLoadBanner(`Live status is slow. Retrying (${nextTry}/${attempts})...`, "warn");
+        });
         
         if (!r.ok) {
           statusSummary.textContent = "Status: error " + r.status;
+          statusCounts.textContent = "Open: --, Closed: --, Signed in: --";
           if (statusMeta) {
             statusMeta.innerHTML = "Status source: unavailable<br>Last updated: --";
           }
+          setMapLoadBanner("Area boundaries loaded. Live status is temporarily unavailable.", "warn", 5000);
           return;
         }
 
@@ -3746,7 +3864,7 @@
           signedInTotal += getCheckedInCount(a);
         }
 
-        const statusIndex = buildStatusIndex(data);
+        statusIndex = buildStatusIndex(data);
         
         statusSummary.textContent = `Status: ${openCount} open, ${closedCount} closed.`;
         statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
@@ -3761,13 +3879,19 @@
           statusMeta.innerHTML = `Status source: ${sourceHost}<br>Last updated: ${fetchedLabel}`;
         }
 
-        await renderFLWAreas(statusIndex);
+        setMapLoadBanner("Areas and live status loaded.", "ok", 2500);
+
       } catch (e) {
         console.error("Error in fetchAreaStatus:", e);
         statusSummary.textContent = "Status: error fetching data.";
+        statusCounts.textContent = "Open: --, Closed: --, Signed in: --";
         if (statusMeta) {
           statusMeta.innerHTML = "Status source: unavailable<br>Last updated: --";
         }
+        setMapLoadBanner("Area boundaries loaded. Live status failed right now. Use Refresh Area Status to try again.", "warn", 7000);
+      } finally {
+        // Always render base polygons, even if live status is temporarily unavailable.
+        await renderFLWAreas(statusIndex);
       }
     }
 
@@ -3780,9 +3904,13 @@
 
         const geojsonUrl = getCurrentInstallation()?.geojsonUrl || "flw_areas.backup.geojson";
         const r = await fetch(geojsonUrl, { cache: "no-store" });
+        if (!r.ok) {
+          throw new Error(`Area GeoJSON fetch failed: ${r.status}`);
+        }
         
         const gj = await r.json();
         areaFeatures = gj.features;
+        renderedBaseId = currentBaseId;
 
         // Patterns
         const archeryHatch = new L.StripePattern({
@@ -4022,6 +4150,7 @@
       } catch (e) {
         console.error("Error in renderFLWAreas:", e);
         statusSummary.textContent = "Status: error rendering areas.";
+        setMapLoadBanner("Could not load area boundaries for this base.", "error", 7000);
       }
     }
 
