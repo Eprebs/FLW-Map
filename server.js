@@ -37,8 +37,7 @@ const ISPORTSMAN_BASES = {
     process.env.ISPORTSMAN_BASE_FORT_LEONARD_WOOD || "https://ftleonardwood.isportsman.net",
   imported_installation:
     process.env.ISPORTSMAN_BASE_IMPORTED_INSTALLATION ||
-    process.env.ISPORTSMAN_BASE_FORT_LEONARD_WOOD ||
-    "https://ftleonardwood.isportsman.net"
+    "https://ftstewart.isportsman.net"
 };
 
 function getISportsmanBase(baseId) {
