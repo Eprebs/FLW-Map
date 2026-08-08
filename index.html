@@ -372,6 +372,13 @@
       color: #111111;
     }
 
+    #quickRefreshStatusBtn {
+      background: linear-gradient(180deg, var(--blaze-strong), var(--blaze));
+      color: #111111;
+      border-color: rgba(255, 198, 168, 0.7);
+      font-weight: 700;
+    }
+
     /* Offline indicator */
     #offlineIndicator {
       position: absolute;
@@ -1128,6 +1135,7 @@
   </div>
 
   <div id="topRightControls">
+    <button id="quickRefreshStatusBtn" class="control-btn" title="Refresh Area Status">Refresh Status</button>
     <button id="stealthModeBtn" class="control-btn">Stealth</button>
     <button id="weatherBtn" class="control-btn">Weather</button>
     <button id="activityForecastBtn" class="control-btn">Activity</button>
@@ -3850,7 +3858,7 @@
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    async function fetchAreaStatusResponse(statusBaseId, attempts = 2, onRetry = null) {
+    async function fetchAreaStatusResponse(statusBaseId, attempts = 1, onRetry = null) {
       let lastError = null;
       for (let i = 0; i < attempts; i++) {
         try {
@@ -3887,11 +3895,7 @@
 
         setMapLoadBanner("Fetching live open/closed status...", "info");
         const statusBaseId = getCurrentInstallation()?.statusBaseId || currentBaseId;
-        const r = await fetchAreaStatusResponse(statusBaseId, 2, (attempt, attempts) => {
-          const nextTry = attempt + 1;
-          statusSummary.textContent = `Status: retrying live status (${nextTry}/${attempts})...`;
-          setMapLoadBanner(`Live status is slow. Retrying (${nextTry}/${attempts})...`, "warn");
-        });
+        const r = await fetchAreaStatusResponse(statusBaseId, 1);
         
         if (!r.ok) {
           statusSummary.textContent = "Status: error " + r.status;
@@ -4208,6 +4212,10 @@
     }
 
     refreshStatusBtn.addEventListener("click", fetchAreaStatus);
+    const quickRefreshStatusBtn = document.getElementById("quickRefreshStatusBtn");
+    if (quickRefreshStatusBtn) {
+      quickRefreshStatusBtn.addEventListener("click", fetchAreaStatus);
+    }
     fetchAreaStatus();
 
     // -----------------------------

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'flw-hunt-cache-v2';
+const CACHE_NAME = 'flw-hunt-cache-v3';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -25,6 +25,26 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Always bypass cache for same-origin API requests.
+  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Keep area overlays fresh and avoid stale gray-state mismatches.
+  if (url.origin === self.location.origin && url.pathname.endsWith('.geojson')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(resp => {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          return resp;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
 
   // Network-first for same-origin core assets to avoid stale app shell
   if (url.origin === self.location.origin) {
