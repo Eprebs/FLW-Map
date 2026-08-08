@@ -709,6 +709,14 @@ function todayISO() {
   ).padStart(2, "0")}`;
 }
 
+function normalizeStatusDate(input) {
+  const value = String(input || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+  return todayISO();
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -1485,13 +1493,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && pathname === "/api/areas") {
     try {
       const requestedBaseId = String(url.searchParams.get("base") || "fort_leonard_wood").trim().toLowerCase();
+      const requestedDate = normalizeStatusDate(url.searchParams.get("date"));
       const ISPORTSMAN_BASE = getISportsmanBase(requestedBaseId);
 
       const payload = {
         activity: "",
         area: "",
         category: "",
-        date: todayISO(),
+        date: requestedDate,
         end_date: "",
         parent_area: "",
         status: ""
@@ -1537,6 +1546,7 @@ const server = http.createServer(async (req, res) => {
         data: raw,
         meta: {
           sourceHost: new URL(ISPORTSMAN_BASE).host,
+          requestedDate,
           fetchedAt: new Date().toISOString()
         }
       };

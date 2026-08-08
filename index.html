@@ -274,6 +274,28 @@
       line-height: 1.35;
     }
 
+    .status-controls {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .status-controls .drawer-btn {
+      margin: 0;
+      width: auto;
+      flex: 1;
+      min-height: 38px;
+    }
+
+    .status-controls select {
+      margin-top: 0;
+      width: 150px;
+      min-height: 38px;
+      font-size: 12px;
+      padding-right: 28px;
+    }
+
     input[type="number"], input[type="text"] {
       width: 100%;
       padding: 4px;
@@ -1094,7 +1116,14 @@
 
     <h3>Status & Info</h3>
     <div class="drawer-section">
-      <button id="refreshStatusBtn" class="drawer-btn">Refresh Area Status</button>
+      <div class="status-controls">
+        <button id="refreshStatusBtn" class="drawer-btn">Refresh Area Status</button>
+        <select id="statusDateSelect" aria-label="Status date">
+          <option value="0">Today</option>
+          <option value="1">Tomorrow</option>
+          <option value="2">+2 Days</option>
+        </select>
+      </div>
       <div id="statusSummary" class="drawer-info">
         Status: not loaded yet.
       </div>
@@ -3685,6 +3714,7 @@
     // ✅ FIXED AREA STATUS + ARCHERY HATCH + CAN DOTS (ONLY)
     // =========================================================
     const refreshStatusBtn = document.getElementById("refreshStatusBtn");
+    const statusDateSelect = document.getElementById("statusDateSelect");
     const statusSummary = document.getElementById("statusSummary");
     const statusCounts = document.getElementById("statusCounts");
     const statusMeta = document.getElementById("statusMeta");
@@ -3858,6 +3888,21 @@
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    function toISODateLocal(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function getSelectedStatusDateISO() {
+      const offsetRaw = statusDateSelect ? Number(statusDateSelect.value) : 0;
+      const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.min(2, offsetRaw)) : 0;
+      const baseDate = new Date();
+      baseDate.setDate(baseDate.getDate() + offset);
+      return toISODateLocal(baseDate);
+    }
+
     async function fetchAreaStatusResponse(statusBaseId, attempts = 1, onRetry = null) {
       let lastError = null;
       for (let i = 0; i < attempts; i++) {
@@ -3881,10 +3926,11 @@
 
     async function fetchAreaStatus() {
       let statusIndex = createEmptyStatusIndex();
+      const requestedDate = getSelectedStatusDateISO();
       try {
         statusSummary.textContent = "Status: loading…";
         if (statusMeta) {
-          statusMeta.innerHTML = "Status source: loading...<br>Last updated: --";
+          statusMeta.innerHTML = `Status source: loading...<br>Date: ${requestedDate}<br>Last updated: --`;
         }
 
         const needsBaseRender = !flwAreasLayer || renderedBaseId !== currentBaseId;
@@ -3895,13 +3941,14 @@
 
         setMapLoadBanner("Fetching live open/closed status...", "info");
         const statusBaseId = getCurrentInstallation()?.statusBaseId || currentBaseId;
-        const r = await fetchAreaStatusResponse(statusBaseId, 1);
+        const query = `/api/areas?base=${encodeURIComponent(statusBaseId)}&date=${encodeURIComponent(requestedDate)}`;
+        const r = await fetch(query, { cache: "no-store" });
         
         if (!r.ok) {
           statusSummary.textContent = "Status: error " + r.status;
           statusCounts.textContent = "Open: --, Closed: --, Signed in: --";
           if (statusMeta) {
-            statusMeta.innerHTML = "Status source: unavailable<br>Last updated: --";
+            statusMeta.innerHTML = `Status source: unavailable<br>Date: ${requestedDate}<br>Last updated: --`;
           }
           setMapLoadBanner("Area boundaries loaded. Live status is temporarily unavailable.", "warn", 5000);
           return;
@@ -3923,7 +3970,7 @@
 
         statusIndex = buildStatusIndex(data);
         
-        statusSummary.textContent = `Status: ${openCount} open, ${closedCount} closed.`;
+        statusSummary.textContent = `Status (${requestedDate}): ${openCount} open, ${closedCount} closed.`;
         statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
 
         if (statusMeta) {
@@ -3933,7 +3980,7 @@
           const fetchedLabel = fetchedAt && !Number.isNaN(fetchedAt.getTime())
             ? fetchedAt.toLocaleString()
             : "unknown";
-          statusMeta.innerHTML = `Status source: ${sourceHost}<br>Last updated: ${fetchedLabel}`;
+          statusMeta.innerHTML = `Status source: ${sourceHost}<br>Date: ${requestedDate}<br>Last updated: ${fetchedLabel}`;
         }
 
         setMapLoadBanner("Areas and live status loaded.", "ok", 2500);
@@ -3943,7 +3990,7 @@
         statusSummary.textContent = "Status: error fetching data.";
         statusCounts.textContent = "Open: --, Closed: --, Signed in: --";
         if (statusMeta) {
-          statusMeta.innerHTML = "Status source: unavailable<br>Last updated: --";
+          statusMeta.innerHTML = `Status source: unavailable<br>Date: ${requestedDate}<br>Last updated: --`;
         }
         setMapLoadBanner("Area boundaries loaded. Live status failed right now. Use Refresh Area Status to try again.", "warn", 7000);
       } finally {
@@ -4212,6 +4259,9 @@
     }
 
     refreshStatusBtn.addEventListener("click", fetchAreaStatus);
+    if (statusDateSelect) {
+      statusDateSelect.addEventListener("change", fetchAreaStatus);
+    }
     const quickRefreshStatusBtn = document.getElementById("quickRefreshStatusBtn");
     if (quickRefreshStatusBtn) {
       quickRefreshStatusBtn.addEventListener("click", fetchAreaStatus);
