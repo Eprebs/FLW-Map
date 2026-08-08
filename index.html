@@ -3774,27 +3774,21 @@
       const alphaNumOnly = base.replace(/[^A-Z0-9]/g, "");
       if (alphaNumOnly) keys.add(alphaNumOnly);
 
-      if (base.includes("-")) {
-        const suffix = base.split("-").pop();
-        if (suffix) {
-          keys.add(suffix);
-          keys.add(suffix.replace(/[^A-Z0-9]/g, ""));
-        }
-      }
-
-      const digitsOnly = alphaNumOnly.replace(/[^0-9]/g, "");
-      if (digitsOnly) {
-        const numeric = String(Number(digitsOnly));
-        if (numeric !== "NaN") keys.add(numeric);
-        if (digitsOnly.length < 3) keys.add(digitsOnly.padStart(2, "0"));
-      }
-
       return Array.from(keys).filter(Boolean);
     }
 
     function buildStatusIndex(data) {
       const statusBySyskey = new Map();
       const statusByAreaKey = new Map();
+      const ambiguousAreaKeys = new Set();
+
+      function getStatusRowIdentity(row) {
+        const keyPart = Number(row?.Area_Syskey);
+        const namePart = normalizeAreaKey(
+          row?.Area_ID || row?.AreaId || row?.AreaName || row?.Area_Name || row?.Area || row?.Name
+        );
+        return `${Number.isFinite(keyPart) ? keyPart : "NA"}|${namePart}`;
+      }
 
       for (const a of data) {
         const syskey = Number(a.Area_Syskey);
@@ -3813,8 +3807,17 @@
 
         for (const rawValue of rawAreaFields) {
           for (const candidate of expandAreaKeyCandidates(rawValue)) {
+            if (ambiguousAreaKeys.has(candidate)) continue;
+
             if (!statusByAreaKey.has(candidate)) {
               statusByAreaKey.set(candidate, a);
+              continue;
+            }
+
+            const existing = statusByAreaKey.get(candidate);
+            if (getStatusRowIdentity(existing) !== getStatusRowIdentity(a)) {
+              statusByAreaKey.delete(candidate);
+              ambiguousAreaKeys.add(candidate);
             }
           }
         }
