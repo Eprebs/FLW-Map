@@ -44,6 +44,9 @@ const ISPORTSMAN_BASES = {
   asis:
     process.env.ISPORTSMAN_BASE_ASIS ||
     "https://liberty.isportsman.net",
+  fort_wainwright:
+    process.env.ISPORTSMAN_BASE_FORT_WAINWRIGHT ||
+    "https://usartrak.isportsman.net",
   fort_riley:
     process.env.ISPORTSMAN_BASE_FORT_RILEY ||
     "https://fortriley.isportsman.net",
