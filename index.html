@@ -4087,12 +4087,16 @@
             ? type
             : "HA";
           const openText = status ? (status.Open ? "OPEN" : "CLOSED") : "UNKNOWN";
+          const unavailableNote = status
+            ? ""
+            : `<span style="color: #fbbf24; font-size: 11px;">Status unavailable from source feed.</span><br>`;
           const signedIn = getCheckedInCount(status);
 
           const popupContent =
             `<strong>${name}</strong><br>` +
             `Type: ${displayType}<br>` +
             `Status: ${openText}<br>` +
+            unavailableNote +
             `Signed in: ${signedIn}<br>` +
             signInButtonHtml;
 
@@ -4217,11 +4221,15 @@
             ? typeText
             : "HA";
           const openText = status ? (status.Open ? "OPEN" : "CLOSED") : "UNKNOWN";
+          const unavailableNote = status
+            ? ""
+            : `<span style="color: #fbbf24; font-size: 11px;">Status unavailable from source feed.</span><br>`;
           const signedIn = getCheckedInCount(status);
           const popupContent = 
             `<strong>${name}</strong><br>` +
             `Type: ${displayType}<br>` +
             `Status: ${openText}<br>` +
+            unavailableNote +
             `Signed in: ${signedIn}`;
 
           if (t === "archery" || t.includes("archery")) {
