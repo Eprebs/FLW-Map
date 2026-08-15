@@ -1018,6 +1018,8 @@
         <select id="baseSelect">
           <option value="fort_leonard_wood" selected>Fort Leonard Wood</option>
           <option value="imported_installation">Fort Stewart</option>
+          <option value="fort_belvoir">Fort Belvoir</option>
+          <option value="asis">ASIS</option>
           <option value="fort_riley">Fort Riley</option>
           <option value="jblm">JBLM</option>
           <option value="fort_drum">Fort Drum</option>
@@ -1446,6 +1448,22 @@
         geojsonUrl: "flw_areas.geojson",
         statusBaseId: "imported_installation",
         signInUrl: "https://ftstewart.isportsman.net/Login.aspx"
+      },
+      fort_belvoir: {
+        label: "Fort Belvoir",
+        center: [38.72, -77.16],
+        zoom: 11,
+        geojsonUrl: "fort_belvoir_areas.geojson",
+        statusBaseId: "fort_belvoir",
+        signInUrl: "https://ftbelvoir.isportsman.net/Login.aspx"
+      },
+      asis: {
+        label: "ASIS",
+        center: [35.13, -79.21],
+        zoom: 10,
+        geojsonUrl: "asis_areas.geojson",
+        statusBaseId: "asis",
+        signInUrl: "https://asis.isportsman.net/Login.aspx"
       },
       fort_riley: {
         label: "Fort Riley",
