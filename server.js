@@ -39,11 +39,11 @@ const ISPORTSMAN_BASES = {
     process.env.ISPORTSMAN_BASE_IMPORTED_INSTALLATION ||
     "https://ftstewart.isportsman.net",
   fort_belvoir:
-    process.env.ISPORTSMAN_BASE_FORT_BELOIR ||
+    process.env.ISPORTSMAN_BASE_FORT_BELVOIR ||
     "https://ftbelvoir.isportsman.net",
   asis:
     process.env.ISPORTSMAN_BASE_ASIS ||
-    "https://asis.isportsman.net",
+    "https://liberty.isportsman.net",
   fort_riley:
     process.env.ISPORTSMAN_BASE_FORT_RILEY ||
     "https://fortriley.isportsman.net",
