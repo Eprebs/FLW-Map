@@ -1469,7 +1469,7 @@
       fort_wainwright: {
         label: "Fort Wainwright",
         center: [64.1727, -146.8322],
-        zoom: 10,
+        zoom: 9,
         geojsonUrl: "fort_wainwright_areas.geojson",
         statusBaseId: "fort_wainwright",
         signInUrl: "https://usartrak.isportsman.net/Login.aspx"
@@ -3752,6 +3752,7 @@
     let cantonmentLayerGroup = null;
     let areaLabelLayerGroup = null;
     let renderedBaseId = null;
+    let lastAutoFitBaseId = null;
     let mapBannerHideTimer = null;
 
     function setMapLoadBanner(message, tone = "info", autoHideMs = 0) {
@@ -4202,11 +4203,13 @@
         map.on('zoomend', updateAreaOpacity);
         updateAreaOpacity();
         
-        // Auto-fit map to show all areas
-        if (flwAreasLayer && flwAreasLayer.getLayers().length > 0) {
+        // Auto-fit once per base switch so refreshes do not keep snapping the map view.
+        if (lastAutoFitBaseId !== currentBaseId && flwAreasLayer && flwAreasLayer.getLayers().length > 0) {
           const bounds = flwAreasLayer.getBounds();
           if (bounds.isValid()) {
-            map.fitBounds(bounds, { padding: [50, 50] });
+            const fitPadding = window.innerWidth <= 600 ? [24, 24] : [50, 50];
+            map.fitBounds(bounds, { padding: fitPadding });
+            lastAutoFitBaseId = currentBaseId;
           }
         }
 
