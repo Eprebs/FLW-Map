@@ -1019,7 +1019,7 @@
           <option value="fort_leonard_wood" selected>Fort Leonard Wood</option>
           <option value="imported_installation">Fort Stewart</option>
           <option value="fort_belvoir">Fort Belvoir</option>
-          <option value="asis">ASIS</option>
+          <option value="asis">Fort Bragg</option>
           <option value="fort_riley">Fort Riley</option>
           <option value="jblm">JBLM</option>
           <option value="fort_drum">Fort Drum</option>
@@ -1458,7 +1458,7 @@
         signInUrl: "https://ftbelvoir.isportsman.net/Login.aspx"
       },
       asis: {
-        label: "ASIS",
+        label: "Fort Bragg",
         center: [35.13, -79.21],
         zoom: 10,
         geojsonUrl: "asis_areas.geojson",
@@ -3833,6 +3833,10 @@
             }
 
             const existing = statusByAreaKey.get(candidate);
+            if (existing?.Open === a?.Open) {
+              // Keep deterministic mapping when duplicate names share the same status.
+              continue;
+            }
             if (getStatusRowIdentity(existing) !== getStatusRowIdentity(a)) {
               statusByAreaKey.delete(candidate);
               ambiguousAreaKeys.add(candidate);
