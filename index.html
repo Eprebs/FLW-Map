@@ -1584,7 +1584,7 @@
     let lastContoursZoom = null;
     let contoursUpdateTimer = null;
     let localContoursLoadPromise = null;
-    const contoursRenderer = L.canvas({ padding: 0.5 });
+    const contoursRenderer = null;
 
     // Local fallback data (used when remote API is unavailable)
     async function loadLocalContoursData() {
@@ -1630,8 +1630,8 @@
         bounds.getNorth().toFixed(6)
       ].join(',');
       const zoom = map.getZoom();
-      const simplify = zoom >= 15 ? 0 : zoom >= 13 ? 0.00003 : 0.00008;
-      const limit = zoom >= 15 ? 18000 : 12000;
+      const simplify = zoom >= 14 ? 0 : zoom >= 12 ? 0.000015 : 0.00004;
+      const limit = zoom >= 15 ? 26000 : zoom >= 13 ? 20000 : 14000;
       return `${CONTOURS_API_BASE}/api/contours?bbox=${bbox}&limit=${limit}&simplify=${simplify}`;
     }
 
@@ -1651,9 +1651,39 @@
 
     function shouldRenderContourForZoom(elev, zoom) {
       if (!Number.isFinite(elev)) return zoom >= 14;
-      if (zoom <= 11) return isMultiple(elev, 100);
-      if (zoom <= 13) return isMultiple(elev, 40) || isMultiple(elev, 20);
+      if (zoom <= 11) return isMultiple(elev, 50);
+      if (zoom <= 13) return isMultiple(elev, 20) || isMultiple(elev, 10);
       return true;
+    }
+
+    function featureIntersectsBounds(feature, bounds) {
+      const geometry = feature?.geometry;
+      if (!geometry) return false;
+
+      const scanCoords = (coords) => {
+        for (let i = 0; i < coords.length; i++) {
+          const pair = coords[i];
+          if (!Array.isArray(pair) || pair.length < 2) continue;
+          const lng = Number(pair[0]);
+          const lat = Number(pair[1]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          if (bounds.contains([lat, lng])) return true;
+        }
+        return false;
+      };
+
+      if (geometry.type === 'LineString') {
+        return scanCoords(geometry.coordinates || []);
+      }
+
+      if (geometry.type === 'MultiLineString') {
+        const lines = geometry.coordinates || [];
+        for (let i = 0; i < lines.length; i++) {
+          if (scanCoords(lines[i] || [])) return true;
+        }
+      }
+
+      return false;
     }
 
     function getContourVisual(elev, zoom) {
@@ -1697,14 +1727,6 @@
     function scheduleContoursUpdate(reason = 'move') {
       if (!contoursActive) return;
 
-      const zoom = map.getZoom();
-      const localOnly = !remoteContoursEnabled || !remoteContoursHealthy;
-
-      // Local contours are global files, so panning should not trigger a rebuild.
-      if (localOnly && reason === 'move' && lastContoursZoom === zoom) {
-        return;
-      }
-
       if (contoursUpdateTimer) clearTimeout(contoursUpdateTimer);
       contoursUpdateTimer = setTimeout(() => {
         contoursUpdateTimer = null;
@@ -1719,38 +1741,23 @@
         return null;
       }
 
-      // Simplify geometry for better performance - reduce coordinate density
-      const simplificationFactor = zoom >= 16 ? 0 : zoom >= 14 ? 1 : 2;
-
-      const simplifyGeometry = (feature) => {
-        if (simplificationFactor === 0) return feature;
-
-        if (feature.geometry.type === 'LineString') {
-          const coords = feature.geometry.coordinates;
-          const simplified = coords.filter((c, i) => i % (simplificationFactor + 1) === 0);
-          return {
-            ...feature,
-            geometry: { ...feature.geometry, coordinates: simplified }
-          };
-        }
-        return feature;
-      };
+      const viewportBounds = map.getBounds().pad(0.2);
 
       const filteredFeatures = data.features.filter((feature) => {
         const elev = getFeatureElevation(feature);
-        return shouldRenderContourForZoom(elev, zoom);
+        return shouldRenderContourForZoom(elev, zoom) && featureIntersectsBounds(feature, viewportBounds);
       });
 
       if (!filteredFeatures.length) {
         return null;
       }
 
-      const simplifiedData = {
+      const filteredData = {
         ...data,
-        features: filteredFeatures.map(simplifyGeometry)
+        features: filteredFeatures
       };
 
-      const casingLayer = L.geoJSON(simplifiedData, {
+      const casingLayer = L.geoJSON(filteredData, {
         style: (feature) => {
           const elev = getFeatureElevation(feature);
           const visual = getContourVisual(elev, zoom);
@@ -1763,10 +1770,10 @@
           };
         },
         interactive: false,
-        renderer: contoursRenderer
+        renderer: contoursRenderer || undefined
       });
 
-      const strokeLayer = L.geoJSON(simplifiedData, {
+      const strokeLayer = L.geoJSON(filteredData, {
         style: (feature) => {
           const elev = getFeatureElevation(feature);
           const visual = getContourVisual(elev, zoom);
@@ -1779,7 +1786,7 @@
           };
         },
         interactive: false,
-        renderer: contoursRenderer
+        renderer: contoursRenderer || undefined
       });
 
       if (currentContoursLabelLayer) {
@@ -1849,7 +1856,7 @@
 
       let sourceData = data;
       if (sourceData === null) {
-        if (zoom >= 16 && contoursHighData) {
+        if (zoom >= 14 && contoursHighData) {
           sourceData = contoursHighData;
         } else if (zoom >= 10 && contoursMedData) {
           sourceData = contoursMedData;
