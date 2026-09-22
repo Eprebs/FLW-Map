@@ -1077,8 +1077,8 @@
     <h3>Terrain Overlays</h3>
     <div class="drawer-section">
       <label class="drawer-label">
-        <input type="checkbox" id="contoursToggle">
-        Contours
+        <input type="checkbox" id="contoursToggle" disabled>
+        Contours (temporarily disabled)
       </label>
       <label class="drawer-label">
         <input type="checkbox" id="hillshadeToggle">
@@ -1438,9 +1438,6 @@
   <!-- Leaflet Routing Machine -->
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
-  <!-- Leaflet VectorGrid (for MVT contours) -->
-  <script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.js"></script>
-
   <!-- Hunt AO cloud data config (set once) -->
   <script>
     window.HUNTAO_CONTOURS_API_BASE = "";
@@ -1573,67 +1570,8 @@
 
     satellite.addTo(map);
 
-    // Overlays: Vector tile contours (OnX-style rebuild)
+    // Overlays
     const HILLSHADE_TILE_URL = String(window.HUNTAO_HILLSHADE_URL || "").trim() || "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
-    const CONTOUR_TILE_URL = '/api/contours-mvt/{z}/{x}/{y}.pbf';
-
-    let currentContoursLayer = null;
-
-    function contourStepForZoom(zoom) {
-      if (zoom <= 10) return 20;
-      if (zoom <= 11) return 10;
-      if (zoom <= 12) return 10;
-      return 10;
-    }
-
-    function contourVisualFromElevation(elev, zoom) {
-      const step = contourStepForZoom(zoom);
-      const indexStep = step * 5;
-      const secondaryStep = step * 2;
-      const isIndex = Number.isFinite(elev) && Math.abs((elev / indexStep) - Math.round(elev / indexStep)) < 0.05;
-      const isSecondary = Number.isFinite(elev) && !isIndex && Math.abs((elev / secondaryStep) - Math.round(elev / secondaryStep)) < 0.05;
-
-      if (isIndex) {
-        return { color: '#fff3c7', weight: zoom >= 15 ? 1.9 : 1.7, opacity: 0.98 };
-      }
-      if (isSecondary) {
-        return { color: '#efcf7f', weight: zoom >= 15 ? 1.45 : 1.3, opacity: 0.9 };
-      }
-      return { color: '#d8b867', weight: zoom >= 15 ? 1.15 : 1.0, opacity: zoom >= 13 ? 0.84 : 0.78 };
-    }
-
-    function contourStyleForVectorTile(properties, zoom) {
-      const rawElev = properties?.ELEV ?? properties?.elev ?? properties?.Elevation ?? properties?.CONTOUR;
-      const elev = Number(rawElev);
-
-      const visual = contourVisualFromElevation(elev, zoom);
-      return {
-        color: visual.color,
-        weight: visual.weight,
-        opacity: visual.opacity,
-        lineCap: 'round',
-        lineJoin: 'round'
-      };
-    }
-
-    function createContoursLayer() {
-      if (!L.vectorGrid || !L.vectorGrid.protobuf) {
-        console.warn('Leaflet VectorGrid unavailable; contours cannot be rendered.');
-        return null;
-      }
-      return L.vectorGrid.protobuf(CONTOUR_TILE_URL, {
-        rendererFactory: L.canvas.tile,
-        vectorTileLayerStyles: {
-          contours: contourStyleForVectorTile
-        },
-        interactive: false,
-        maxZoom: 19,
-        minZoom: 9,
-        updateWhenIdle: true,
-        updateWhenZooming: false,
-        attribution: 'Contours'
-      });
-    }
 
     // Hillshade via local or cloud XYZ tiles
     const hillshadeLayer = L.tileLayer(
@@ -1647,39 +1585,10 @@
     );
 
     // Track which overlays are active
-    let contoursActive = false;
     let hillshadeActive = false;
 
     // Terrain overlays
-    const contoursToggle = document.getElementById("contoursToggle");
     const hillshadeToggle = document.getElementById("hillshadeToggle");
-
-    contoursToggle.addEventListener("change", () => {
-      if (contoursToggle.checked && !contoursActive) {
-        contoursActive = true;
-        if (currentContoursLayer) {
-          map.removeLayer(currentContoursLayer);
-          currentContoursLayer = null;
-        }
-        currentContoursLayer = createContoursLayer();
-        if (!currentContoursLayer) {
-          contoursActive = false;
-          contoursToggle.checked = false;
-          setMapLoadBanner('Contours unavailable right now. Try refresh once.', 'warn', 4500);
-          return;
-        }
-        currentContoursLayer.on('tileerror', (err) => {
-          console.warn('Contour tile load error', err);
-        });
-        currentContoursLayer.addTo(map);
-      } else if (!contoursToggle.checked && contoursActive) {
-        contoursActive = false;
-        if (currentContoursLayer) {
-          map.removeLayer(currentContoursLayer);
-          currentContoursLayer = null;
-        }
-      }
-    });
 
     hillshadeToggle.addEventListener("change", () => {
       if (hillshadeToggle.checked && !hillshadeActive) {
