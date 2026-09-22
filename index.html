@@ -1581,6 +1581,9 @@
     let remoteContoursEnabled = Boolean(CONTOURS_API_BASE);
     let remoteContoursHealthy = true;
     let lastContoursRequestId = 0;
+    let lastContoursZoom = null;
+    let contoursUpdateTimer = null;
+    const contoursRenderer = L.canvas({ padding: 0.5 });
 
     // Local fallback data (used when remote API is unavailable)
     async function loadLocalContoursData() {
@@ -1677,6 +1680,24 @@
       };
     }
 
+    function scheduleContoursUpdate(reason = 'move') {
+      if (!contoursActive) return;
+
+      const zoom = map.getZoom();
+      const localOnly = !remoteContoursEnabled || !remoteContoursHealthy;
+
+      // Local contours are global files, so panning should not trigger a rebuild.
+      if (localOnly && reason === 'move' && lastContoursZoom === zoom) {
+        return;
+      }
+
+      if (contoursUpdateTimer) clearTimeout(contoursUpdateTimer);
+      contoursUpdateTimer = setTimeout(() => {
+        contoursUpdateTimer = null;
+        updateContours();
+      }, reason === 'zoom' ? 0 : 100);
+    }
+
     // Create layer for a specific zoom level
     function createContoursLayer(data, zoom) {
       if (!data || !data.features || data.features.length === 0) {
@@ -1727,7 +1748,8 @@
             lineJoin: 'round'
           };
         },
-        interactive: false
+        interactive: false,
+        renderer: contoursRenderer
       });
 
       const strokeLayer = L.geoJSON(simplifiedData, {
@@ -1742,7 +1764,8 @@
             lineJoin: 'round'
           };
         },
-        interactive: false
+        interactive: false,
+        renderer: contoursRenderer
       });
 
       if (currentContoursLabelLayer) {
@@ -1750,10 +1773,12 @@
         currentContoursLabelLayer = null;
       }
 
-      if (zoom >= 14) {
+      if (zoom >= 15) {
         const labels = [];
-        const labelStep = zoom >= 16 ? 6 : 10;
+        const labelStep = zoom >= 16 ? 8 : 14;
+        const maxLabels = zoom >= 16 ? 110 : 70;
         let labelCounter = 0;
+        const viewBounds = map.getBounds();
 
         strokeLayer.eachLayer((layer) => {
           const feature = layer.feature;
@@ -1763,6 +1788,7 @@
 
           labelCounter++;
           if (labelCounter % labelStep !== 0) return;
+          if (labels.length >= maxLabels) return;
 
           const latLngs = layer.getLatLngs();
           const lineCoords = Array.isArray(latLngs?.[0]) ? latLngs[0] : latLngs;
@@ -1770,6 +1796,7 @@
 
           const midpoint = lineCoords[Math.floor(lineCoords.length / 2)];
           if (!midpoint || typeof midpoint.lat !== 'number' || typeof midpoint.lng !== 'number') return;
+          if (!viewBounds.contains(midpoint)) return;
 
           labels.push(
             L.marker(midpoint, {
@@ -1823,6 +1850,8 @@
         currentContoursLayer = createContoursLayer(data, zoom);
         if (currentContoursLayer) currentContoursLayer.addTo(map);
       }
+
+      lastContoursZoom = zoom;
     }
 
     async function updateContours() {
@@ -1869,8 +1898,8 @@
     loadLocalContoursData();
 
     // Update contours when view changes
-    map.on('zoomend', updateContours);
-    map.on('moveend', updateContours);
+    map.on('zoomend', () => scheduleContoursUpdate('zoom'));
+    map.on('moveend', () => scheduleContoursUpdate('move'));
 
     // Hillshade via local or cloud XYZ tiles
     const hillshadeLayer = L.tileLayer(
@@ -1895,9 +1924,14 @@
       if (contoursToggle.checked && !contoursActive) {
         contoursActive = true;
         if (remoteContoursEnabled) remoteContoursHealthy = true;
-        updateContours();
+        lastContoursZoom = null;
+        scheduleContoursUpdate('zoom');
       } else if (!contoursToggle.checked && contoursActive) {
         contoursActive = false;
+        if (contoursUpdateTimer) {
+          clearTimeout(contoursUpdateTimer);
+          contoursUpdateTimer = null;
+        }
         if (currentContoursLayer) {
           map.removeLayer(currentContoursLayer);
           currentContoursLayer = null;
