@@ -1583,6 +1583,7 @@
     let lastContoursRequestId = 0;
     let lastContoursZoom = null;
     let contoursUpdateTimer = null;
+    let localContoursLoadPromise = null;
     const contoursRenderer = L.canvas({ padding: 0.5 });
 
     // Local fallback data (used when remote API is unavailable)
@@ -1605,6 +1606,19 @@
         contoursHighData = null;
         console.warn('High-resolution contours unavailable; using medium contours only.');
       }
+    }
+
+    function ensureLocalContoursData() {
+      const hasMed = Boolean(contoursMedData && Array.isArray(contoursMedData.features) && contoursMedData.features.length);
+      const hasHigh = Boolean(contoursHighData && Array.isArray(contoursHighData.features) && contoursHighData.features.length);
+      if (hasMed || hasHigh) return Promise.resolve();
+      if (localContoursLoadPromise) return localContoursLoadPromise;
+
+      localContoursLoadPromise = loadLocalContoursData().finally(() => {
+        localContoursLoadPromise = null;
+      });
+
+      return localContoursLoadPromise;
     }
 
     function buildContoursApiUrl() {
@@ -1833,21 +1847,17 @@
         currentContoursLabelLayer = null;
       }
 
-      // Add appropriate layer based on zoom (for local fallback)
-      if (zoom >= 16 && data === null && contoursHighData) {
-        currentContoursLayer = createContoursLayer(contoursHighData, zoom);
-        if (currentContoursLayer) currentContoursLayer.addTo(map);
-        return;
+      let sourceData = data;
+      if (sourceData === null) {
+        if (zoom >= 16 && contoursHighData) {
+          sourceData = contoursHighData;
+        } else if (zoom >= 10 && contoursMedData) {
+          sourceData = contoursMedData;
+        }
       }
 
-      if (zoom >= 10 && data === null && contoursMedData) {
-        currentContoursLayer = createContoursLayer(contoursMedData, zoom);
-        if (currentContoursLayer) currentContoursLayer.addTo(map);
-        return;
-      }
-
-      if (data) {
-        currentContoursLayer = createContoursLayer(data, zoom);
+      if (sourceData) {
+        currentContoursLayer = createContoursLayer(sourceData, zoom);
         if (currentContoursLayer) currentContoursLayer.addTo(map);
       }
 
@@ -1858,6 +1868,7 @@
       if (!contoursActive) return;
 
       if (!remoteContoursEnabled || !remoteContoursHealthy) {
+        await ensureLocalContoursData();
         renderContoursLayer(null);
         return;
       }
@@ -1880,7 +1891,7 @@
 
         if (!hasRemoteFeatures) {
           console.warn('Remote contours returned no features; using local fallback.');
-          await loadLocalContoursData();
+          await ensureLocalContoursData();
           renderContoursLayer(null);
           return;
         }
@@ -1889,13 +1900,13 @@
       } catch (err) {
         console.warn('Remote contours unavailable; using local fallback.', err);
         remoteContoursHealthy = false;
-        await loadLocalContoursData();
+        await ensureLocalContoursData();
         renderContoursLayer(null);
       }
     }
 
     // Load local fallback once in background
-    loadLocalContoursData();
+    ensureLocalContoursData();
 
     // Update contours when view changes
     map.on('zoomend', () => scheduleContoursUpdate('zoom'));
