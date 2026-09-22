@@ -126,10 +126,10 @@ async function ensureContourTileIndex() {
     contourTileIndexPromise = (async () => {
       const contoursGeoJson = loadContourGeoJson();
       contourTileIndex = geojsonvt(contoursGeoJson, {
-        maxZoom: 16,
+        maxZoom: 20,
         indexMaxZoom: 13,
         indexMaxPoints: 0,
-        tolerance: 2,
+        tolerance: 1,
         extent: 4096,
         buffer: 64,
         lineMetrics: false,
@@ -1666,7 +1666,13 @@ const server = http.createServer(async (req, res) => {
       }
 
       const index = await ensureContourTileIndex();
-      const tile = index.getTile(z, x, y);
+      const nativeMaxZoom = 16;
+      const sourceZ = Math.min(z, nativeMaxZoom);
+      const zoomDelta = z - sourceZ;
+      const scale = zoomDelta > 0 ? Math.pow(2, zoomDelta) : 1;
+      const sourceX = zoomDelta > 0 ? Math.floor(x / scale) : x;
+      const sourceY = zoomDelta > 0 ? Math.floor(y / scale) : y;
+      const tile = index.getTile(sourceZ, sourceX, sourceY);
 
       if (!tile || !Array.isArray(tile.features) || !tile.features.length) {
         res.writeHead(204, {

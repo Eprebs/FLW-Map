@@ -1594,12 +1594,12 @@
       const isSecondary = Number.isFinite(elev) && !isIndex && Math.abs((elev / secondaryStep) - Math.round(elev / secondaryStep)) < 0.05;
 
       if (isIndex) {
-        return { color: '#fff3c7', weight: zoom >= 15 ? 2.3 : 2.0, opacity: 0.98 };
+        return { color: '#fff3c7', weight: zoom >= 15 ? 1.9 : 1.7, opacity: 0.98 };
       }
       if (isSecondary) {
-        return { color: '#efcf7f', weight: zoom >= 15 ? 1.65 : 1.45, opacity: 0.9 };
+        return { color: '#efcf7f', weight: zoom >= 15 ? 1.45 : 1.3, opacity: 0.9 };
       }
-      return { color: '#caa85c', weight: zoom >= 15 ? 1.2 : 1.05, opacity: zoom >= 13 ? 0.78 : 0.68 };
+      return { color: '#d8b867', weight: zoom >= 15 ? 1.15 : 1.0, opacity: zoom >= 13 ? 0.84 : 0.78 };
     }
 
     function contourStyleForVectorTile(properties, zoom) {
