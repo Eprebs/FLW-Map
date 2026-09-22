@@ -1617,6 +1617,10 @@
     }
 
     function createContoursLayer() {
+      if (!L.vectorGrid || !L.vectorGrid.protobuf) {
+        console.warn('Leaflet VectorGrid unavailable; contours cannot be rendered.');
+        return null;
+      }
       return L.vectorGrid.protobuf(CONTOUR_TILE_URL, {
         rendererFactory: L.canvas.tile,
         vectorTileLayerStyles: {
@@ -1658,6 +1662,12 @@
           currentContoursLayer = null;
         }
         currentContoursLayer = createContoursLayer();
+        if (!currentContoursLayer) {
+          contoursActive = false;
+          contoursToggle.checked = false;
+          setMapLoadBanner('Contours unavailable right now. Try refresh once.', 'warn', 4500);
+          return;
+        }
         currentContoursLayer.on('tileerror', (err) => {
           console.warn('Contour tile load error', err);
         });
@@ -3963,26 +3973,31 @@
         renderedBaseId = currentBaseId;
 
         // Patterns
-        const archeryHatch = new L.StripePattern({
-          weight: 3,
-          spaceWeight: 6,
-          color: "#f97316",
-          opacity: 0.50,
-          angle: 45
-        });
-        archeryHatch.addTo(map);
+        const hasPatternPlugin = Boolean(L.StripePattern && L.Pattern && L.PatternCircle);
+        const archeryHatch = hasPatternPlugin
+          ? new L.StripePattern({
+              weight: 3,
+              spaceWeight: 6,
+              color: "#f97316",
+              opacity: 0.50,
+              angle: 45
+            })
+          : null;
+        if (archeryHatch) archeryHatch.addTo(map);
 
-        const canDots = new L.Pattern({ width: 10, height: 10 });
-        const dot = new L.PatternCircle({
-          x: 5, y: 5,
-          radius: 2,
-          fill: true,
-          fillColor: "#3b82f6",
-          fillOpacity: 0.85,
-          stroke: false
-        });
-        canDots.addShape(dot);
-        canDots.addTo(map);
+        const canDots = hasPatternPlugin ? new L.Pattern({ width: 10, height: 10 }) : null;
+        if (canDots) {
+          const dot = new L.PatternCircle({
+            x: 5, y: 5,
+            radius: 2,
+            fill: true,
+            fillColor: "#3b82f6",
+            fillOpacity: 0.85,
+            stroke: false
+          });
+          canDots.addShape(dot);
+          canDots.addTo(map);
+        }
 
         let currentAreaOpacity = 0.35;
         const signInButtonHtml = buildSignInButtonHtml();
@@ -4160,7 +4175,8 @@
               color: "transparent",
               weight: 0,
               fillOpacity: currentAreaOpacity,
-              fillPattern: archeryHatch
+              fillPattern: archeryHatch || undefined,
+              fillColor: archeryHatch ? undefined : "#f97316"
             });
             if (typeof layer.bindToolInteractions === "function") {
               layer.bindToolInteractions(poly);
@@ -4175,7 +4191,8 @@
               color: "transparent",
               weight: 0,
               fillOpacity: currentAreaOpacity,
-              fillPattern: canDots
+              fillPattern: canDots || undefined,
+              fillColor: canDots ? undefined : "#3b82f6"
             });
             if (typeof layer.bindToolInteractions === "function") {
               layer.bindToolInteractions(poly);
