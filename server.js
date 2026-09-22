@@ -7,6 +7,9 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const geojsonvtModule = require("geojson-vt");
+const geojsonvt = geojsonvtModule.default || geojsonvtModule;
+const vtpbf = require("vt-pbf");
 
 const PORT = Number(process.env.PORT || 5173);
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, "data");
@@ -29,6 +32,9 @@ const AUTH_RATE_LIMIT_MAX = Number(process.env.AUTH_RATE_LIMIT_MAX || 25);
 const AUTH_RATE_LIMIT_WINDOW_MS = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const RESET_DATA_ON_BOOT = String(process.env.RESET_DATA_ON_BOOT || "false").toLowerCase() === "true";
 const ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION = String(process.env.ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION || "true").toLowerCase() === "true";
+const CONTOUR_HIGH_FILE = path.join(__dirname, "contours_high.geojson");
+const CONTOUR_MED_FILE = path.join(__dirname, "contours_med.geojson");
+const CONTOUR_TILE_LAYER_NAME = "contours";
 
 // Installation-specific iSportsman origins.
 // Override these with environment variables as more bases are added.
@@ -63,6 +69,82 @@ function getISportsmanBase(baseId) {
   return ISPORTSMAN_BASES[key] || ISPORTSMAN_BASES.fort_leonard_wood;
 }
 const authRateLimitStore = new Map();
+let contourTileIndex = null;
+let contourTileSourcePath = null;
+let contourTileIndexPromise = null;
+
+function parseContourElevation(props) {
+  if (!props || typeof props !== "object") return null;
+  const raw = props.ELEV ?? props.elev ?? props.Elevation ?? props.CONTOUR;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : null;
+}
+
+function normalizeContourFeatureProperties(feature, index) {
+  const elev = parseContourElevation(feature?.properties || {});
+  const id = Number(feature?.properties?.ID ?? index + 1);
+  return {
+    ID: Number.isFinite(id) ? id : index + 1,
+    ELEV: Number.isFinite(elev) ? elev : null
+  };
+}
+
+function loadContourGeoJson() {
+  const sourcePath = fs.existsSync(CONTOUR_HIGH_FILE)
+    ? CONTOUR_HIGH_FILE
+    : (fs.existsSync(CONTOUR_MED_FILE) ? CONTOUR_MED_FILE : null);
+
+  if (!sourcePath) {
+    throw new Error("No contour GeoJSON files found.");
+  }
+
+  const raw = fs.readFileSync(sourcePath, "utf8");
+  const parsed = JSON.parse(raw);
+
+  if (!parsed || parsed.type !== "FeatureCollection" || !Array.isArray(parsed.features)) {
+    throw new Error("Contour GeoJSON must be a FeatureCollection with features.");
+  }
+
+  parsed.features = parsed.features
+    .filter(f => f && f.type === "Feature" && f.geometry)
+    .map((feature, index) => ({
+      type: "Feature",
+      geometry: feature.geometry,
+      properties: normalizeContourFeatureProperties(feature, index)
+    }));
+
+  contourTileSourcePath = sourcePath;
+  return parsed;
+}
+
+async function ensureContourTileIndex() {
+  if (contourTileIndex) {
+    return contourTileIndex;
+  }
+
+  if (!contourTileIndexPromise) {
+    contourTileIndexPromise = (async () => {
+      const contoursGeoJson = loadContourGeoJson();
+      contourTileIndex = geojsonvt(contoursGeoJson, {
+        maxZoom: 16,
+        indexMaxZoom: 13,
+        indexMaxPoints: 0,
+        tolerance: 2,
+        extent: 4096,
+        buffer: 64,
+        lineMetrics: false,
+        generateId: false
+      });
+      console.log(`Contour tile index built from ${path.basename(contourTileSourcePath)} (${contoursGeoJson.features.length} features).`);
+      return contourTileIndex;
+    })().catch(err => {
+      contourTileIndexPromise = null;
+      throw err;
+    });
+  }
+
+  return contourTileIndexPromise;
+}
 
 function ensureDataStore() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -1569,6 +1651,53 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ----------------------------------------------------
+  // API: Vector tile contours (MVT)
+  // ----------------------------------------------------
+  const contourTileMatch = pathname.match(/^\/api\/contours-mvt\/(\d+)\/(\d+)\/(\d+)\.pbf$/);
+  if (req.method === "GET" && contourTileMatch) {
+    try {
+      const z = Number(contourTileMatch[1]);
+      const x = Number(contourTileMatch[2]);
+      const y = Number(contourTileMatch[3]);
+
+      if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y) || z < 0 || z > 22) {
+        sendJson(res, 400, { error: "Invalid contour tile coordinates." });
+        return;
+      }
+
+      const index = await ensureContourTileIndex();
+      const tile = index.getTile(z, x, y);
+
+      if (!tile || !Array.isArray(tile.features) || !tile.features.length) {
+        res.writeHead(204, {
+          "Access-Control-Allow-Origin": CORS_ORIGIN,
+          "Access-Control-Allow-Headers": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Cache-Control": "public, max-age=300"
+        });
+        res.end();
+        return;
+      }
+
+      const mvt = vtpbf.fromGeojsonVt({ [CONTOUR_TILE_LAYER_NAME]: tile });
+      const mvtLength = Buffer.isBuffer(mvt) ? mvt.length : Buffer.from(mvt).length;
+      res.writeHead(200, {
+        "Content-Type": "application/vnd.mapbox-vector-tile",
+        "Content-Length": mvtLength,
+        "Access-Control-Allow-Origin": CORS_ORIGIN,
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Cache-Control": "public, max-age=300"
+      });
+      res.end(mvt);
+    } catch (err) {
+      console.error("Contour tile error:", err);
+      sendJson(res, 500, { error: "Failed to generate contour tile." });
+    }
+    return;
+  }
+
+  // ----------------------------------------------------
   // Serve index.html
   // ----------------------------------------------------
   if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
@@ -1610,6 +1739,9 @@ server.listen(PORT, () => {
   }
   ensureDataStore();
   ensureDefaultTemplateFile();
+  ensureContourTileIndex().catch(err => {
+    console.warn("Contour tile index warmup failed:", String(err?.message || err));
+  });
   const configStatus = getConfigStatus();
   if (NODE_ENV === "production") {
     const errors = getProductionConfigErrors();
