@@ -1580,8 +1580,8 @@
     let currentContoursLayer = null;
 
     function contourStepForZoom(zoom) {
-      if (zoom <= 10) return 40;
-      if (zoom <= 11) return 20;
+      if (zoom <= 10) return 20;
+      if (zoom <= 11) return 10;
       if (zoom <= 12) return 10;
       return 10;
     }
@@ -1605,14 +1605,6 @@
     function contourStyleForVectorTile(properties, zoom) {
       const rawElev = properties?.ELEV ?? properties?.elev ?? properties?.Elevation ?? properties?.CONTOUR;
       const elev = Number(rawElev);
-      const step = contourStepForZoom(zoom);
-
-      if (Number.isFinite(elev)) {
-        const show = zoom >= 13 || (zoom >= 11 && Math.abs((elev / step) - Math.round(elev / step)) < 0.05) || (zoom <= 10 && Math.abs((elev / 20) - Math.round(elev / 20)) < 0.05);
-        if (!show) {
-          return { opacity: 0, weight: 0 };
-        }
-      }
 
       const visual = contourVisualFromElevation(elev, zoom);
       return {
@@ -1632,7 +1624,7 @@
         },
         interactive: false,
         maxZoom: 19,
-        minZoom: 8,
+        minZoom: 9,
         updateWhenIdle: true,
         updateWhenZooming: false,
         attribution: 'Contours'
