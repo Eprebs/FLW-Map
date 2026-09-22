@@ -860,6 +860,83 @@
       padding: 20px;
     }
 
+    #aiScoutModal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      z-index: 2000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #aiScoutModal.open {
+      display: flex;
+    }
+
+    #aiScoutPanel {
+      background: var(--glass-strong);
+      background-image: var(--topo-pattern);
+      background-size: 380px auto;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 460px;
+      width: 92%;
+      max-height: 82vh;
+      overflow-y: auto;
+      backdrop-filter: blur(10px);
+    }
+
+    #aiScoutPanel h3 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      color: var(--gold-strong);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #aiScoutPanel .close-btn {
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 20px;
+      padding: 0;
+      line-height: 1;
+    }
+
+    #aiScoutPanel .close-btn:hover {
+      color: var(--gold);
+    }
+
+    .ai-scout-card {
+      margin: 12px 0;
+      padding: 12px;
+      background: rgba(16, 27, 34, 0.62);
+      border-radius: 10px;
+      border: 1px solid rgba(132, 153, 168, 0.28);
+      border-left: 3px solid var(--blaze);
+    }
+
+    .ai-scout-score {
+      font-size: 12px;
+      color: var(--gold);
+      margin-top: 4px;
+    }
+
+    .ai-scout-note {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 10px;
+    }
+
     /* Area legend */
     #areaLegend {
       position: absolute;
@@ -1183,6 +1260,7 @@
 
   <div id="topRightControls">
     <button id="quickRefreshStatusBtn" class="control-btn" title="Refresh Area Status">Refresh Status</button>
+    <button id="aiScoutBtn" class="control-btn" title="Analyze current map view">Scout AI</button>
     <button id="stealthModeBtn" class="control-btn">Stealth</button>
     <button id="weatherBtn" class="control-btn">Weather</button>
     <button id="activityForecastBtn" class="control-btn">Activity</button>
@@ -1237,6 +1315,24 @@
       </h3>
       <div id="weatherContent">
         <div class="loading">Fetching weather data...</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="aiScoutModal">
+    <div id="aiScoutPanel">
+      <h3>
+        AI Scout: Analyze This View
+        <button class="close-btn" id="aiScoutPanelClose">✕</button>
+      </h3>
+      <div id="aiScoutContent">
+        <div class="loading">Press Analyze to suggest beginner-friendly setup locations.</div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top: 12px;">
+        <button id="runAiScoutBtn" class="modal-btn primary" style="flex:1;">Analyze View</button>
+      </div>
+      <div class="ai-scout-note">
+        Guidance only. Always verify legal access rules, area status, and safe shooting conditions.
       </div>
     </div>
   </div>
@@ -1820,6 +1916,7 @@
     }
 
     let areaFeatures = []; // Store loaded area features for point-in-polygon
+    let aiScoutSuggestionLayer = null;
 
     // Point-in-polygon algorithm (ray casting)
     function isPointInPolygon(point, polygon) {
@@ -1853,6 +1950,25 @@
         }
       }
       return "Outside Known Areas";
+    }
+
+    function pointInFeature(lat, lng, feature) {
+      const geom = feature?.geometry;
+      if (!geom) return false;
+
+      if (geom.type === "Polygon") {
+        const ring = (geom.coordinates?.[0] || []).map(coord => [coord[0], coord[1]]);
+        return ring.length >= 3 ? isPointInPolygon([lng, lat], ring) : false;
+      }
+
+      if (geom.type === "MultiPolygon") {
+        for (const polygon of geom.coordinates || []) {
+          const ring = (polygon?.[0] || []).map(coord => [coord[0], coord[1]]);
+          if (ring.length >= 3 && isPointInPolygon([lng, lat], ring)) return true;
+        }
+      }
+
+      return false;
     }
 
     function compactReferenceName(name) {
@@ -3584,6 +3700,7 @@
     let renderedBaseId = null;
     let lastAutoFitBaseId = null;
     let mapBannerHideTimer = null;
+    let latestStatusIndex = createEmptyStatusIndex();
 
     function setMapLoadBanner(message, tone = "info", autoHideMs = 0) {
       if (!mapLoadBanner) return;
@@ -3834,6 +3951,7 @@
         }
 
         statusIndex = buildStatusIndex(data);
+        latestStatusIndex = statusIndex;
         
         statusSummary.textContent = `Status (${requestedDate}): ${openCount} open, ${closedCount} closed.`;
         statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
@@ -3860,6 +3978,7 @@
         setMapLoadBanner("Area boundaries loaded. Live status failed right now. Use Refresh Area Status to try again.", "warn", 7000);
       } finally {
         // Always render base polygons, even if live status is temporarily unavailable.
+        latestStatusIndex = statusIndex;
         await renderFLWAreas(statusIndex);
       }
     }
@@ -3870,6 +3989,7 @@
         if (archeryLayerGroup) { map.removeLayer(archeryLayerGroup); archeryLayerGroup = null; }
         if (cantonmentLayerGroup) { map.removeLayer(cantonmentLayerGroup); cantonmentLayerGroup = null; }
         if (areaLabelLayerGroup) { map.removeLayer(areaLabelLayerGroup); areaLabelLayerGroup = null; }
+        if (aiScoutSuggestionLayer) { map.removeLayer(aiScoutSuggestionLayer); aiScoutSuggestionLayer = null; }
 
         const geojsonUrl = getCurrentInstallation()?.geojsonUrl || "flw_areas.backup.geojson";
         const r = await fetch(geojsonUrl, { cache: "no-store" });
@@ -4513,6 +4633,11 @@
 
     // Real Weather Data from Open-Meteo API
     const weatherBtn = document.getElementById("weatherBtn");
+    const aiScoutBtn = document.getElementById("aiScoutBtn");
+    const aiScoutModal = document.getElementById("aiScoutModal");
+    const aiScoutPanelClose = document.getElementById("aiScoutPanelClose");
+    const aiScoutContent = document.getElementById("aiScoutContent");
+    const runAiScoutBtn = document.getElementById("runAiScoutBtn");
     const weatherModal = document.getElementById("weatherModal");
     const weatherPanelClose = document.getElementById("weatherPanelClose");
     const weatherContent = document.getElementById("weatherContent");
@@ -4635,6 +4760,271 @@
       return dirs[Math.round(angle / 22.5) % 16];
     }
 
+    function getPrimaryRing(feature) {
+      const geom = feature?.geometry;
+      if (!geom) return [];
+      if (geom.type === "Polygon") return geom.coordinates?.[0] || [];
+      if (geom.type === "MultiPolygon") return geom.coordinates?.[0]?.[0] || [];
+      return [];
+    }
+
+    function getFeatureCenterFromRing(ring) {
+      if (!Array.isArray(ring) || !ring.length) return null;
+      let minLng = Infinity;
+      let maxLng = -Infinity;
+      let minLat = Infinity;
+      let maxLat = -Infinity;
+      for (const coord of ring) {
+        const lng = Number(coord?.[0]);
+        const lat = Number(coord?.[1]);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+      if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null;
+      return { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 };
+    }
+
+    function toLocalMeters(lat, lng, refLat) {
+      const latScale = 110540;
+      const lngScale = 111320 * Math.cos((refLat * Math.PI) / 180);
+      return { x: lng * lngScale, y: lat * latScale };
+    }
+
+    function computeRingMetrics(ring) {
+      if (!Array.isArray(ring) || ring.length < 4) return { area: 0, perimeter: 0, edgeDensity: 0 };
+      const refLat = ring.reduce((sum, c) => sum + Number(c?.[1] || 0), 0) / ring.length;
+      const points = ring.map(c => toLocalMeters(Number(c?.[1] || 0), Number(c?.[0] || 0), refLat));
+      let twiceArea = 0;
+      let perimeter = 0;
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        twiceArea += (a.x * b.y) - (b.x * a.y);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        perimeter += Math.sqrt(dx * dx + dy * dy);
+      }
+      const area = Math.abs(twiceArea) / 2;
+      const edgeDensity = area > 0 ? perimeter / Math.sqrt(area) : 0;
+      return { area, perimeter, edgeDensity };
+    }
+
+    function scoreAiScoutCandidate(candidate, context) {
+      const { status, checkedIn, distanceToBoundsM, centerVectorScore, edgeDensity, areaType } = context;
+      const isOpen = status?.Open === true;
+      const isUnknown = !status;
+
+      if (status?.Open === false) return { total: -999, reasons: ["Closed area"] };
+
+      const statusScore = isOpen ? 24 : (isUnknown ? 10 : 12);
+      const pressureScore = Math.max(0, 22 - Math.min(22, checkedIn * 2.5));
+
+      const idealBufferM = 90;
+      const edgeScore = Math.max(0, 20 - (Math.abs(distanceToBoundsM - idealBufferM) / idealBufferM) * 20);
+
+      const windScore = Number.isFinite(centerVectorScore)
+        ? Math.max(0, Math.min(18, ((centerVectorScore + 1) / 2) * 18))
+        : 8;
+
+      const shapeScore = Math.max(0, Math.min(12, ((edgeDensity - 4) / 5) * 12));
+      const typeScore = /archery|can|cantonment/i.test(String(areaType || "")) ? 6 : 3;
+
+      const total = Math.round(Math.max(0, Math.min(100, statusScore + pressureScore + edgeScore + windScore + shapeScore + typeScore)));
+
+      const reasons = [];
+      reasons.push(isOpen ? "Area is currently OPEN" : "Status feed uncertain, but geometry looks promising");
+      if (checkedIn <= 2) reasons.push("Lower visible hunter pressure");
+      if (distanceToBoundsM >= 60 && distanceToBoundsM <= 140) reasons.push("Useful buffer from boundary pressure");
+      if (Number.isFinite(centerVectorScore) && centerVectorScore > 0.2) reasons.push("Wind setup favors keeping scent off core area");
+      if (edgeDensity >= 6) reasons.push("Irregular edge structure can create natural travel funnels");
+
+      return { total, reasons: reasons.slice(0, 3) };
+    }
+
+    function buildAiScoutCandidates() {
+      if (!flwAreasLayer) return [];
+      const mapBounds = map.getBounds();
+      const windToDeg = Number.isFinite(currentWind?.direction) ? (currentWind.direction + 180) % 360 : null;
+      const windToRad = Number.isFinite(windToDeg) ? (windToDeg * Math.PI / 180) : null;
+
+      const candidates = [];
+      flwAreasLayer.eachLayer((layer) => {
+        const feature = layer?.feature;
+        if (!feature) return;
+        const layerBounds = layer.getBounds?.();
+        if (!layerBounds || !mapBounds.intersects(layerBounds)) return;
+
+        const status = getFeatureStatus(feature, latestStatusIndex);
+        if (status?.Open === false) return;
+
+        const ring = getPrimaryRing(feature);
+        const center = getFeatureCenterFromRing(ring);
+        if (!center) return;
+
+        const metrics = computeRingMetrics(ring);
+        const checkedIn = getCheckedInCount(status);
+        const areaName = String(feature?.properties?.area_name || "Area").trim() || "Area";
+        const areaType = String(feature?.properties?.area_type || "HA").trim() || "HA";
+
+        const sampleRatios = [
+          [0.5, 0.5],
+          [0.35, 0.35],
+          [0.65, 0.35],
+          [0.35, 0.65],
+          [0.65, 0.65],
+          [0.5, 0.3],
+          [0.5, 0.7]
+        ];
+
+        for (const [rx, ry] of sampleRatios) {
+          const lat = layerBounds.getSouth() + (layerBounds.getNorth() - layerBounds.getSouth()) * ry;
+          const lng = layerBounds.getWest() + (layerBounds.getEast() - layerBounds.getWest()) * rx;
+          if (!mapBounds.contains([lat, lng])) continue;
+          if (!pointInFeature(lat, lng, feature)) continue;
+
+          const distN = map.distance([lat, lng], [layerBounds.getNorth(), lng]);
+          const distS = map.distance([lat, lng], [layerBounds.getSouth(), lng]);
+          const distE = map.distance([lat, lng], [lat, layerBounds.getEast()]);
+          const distW = map.distance([lat, lng], [lat, layerBounds.getWest()]);
+          const distanceToBoundsM = Math.min(distN, distS, distE, distW);
+
+          let centerVectorScore = NaN;
+          if (Number.isFinite(windToRad)) {
+            const dx = lng - center.lng;
+            const dy = lat - center.lat;
+            const mag = Math.sqrt(dx * dx + dy * dy);
+            if (mag > 0) {
+              const ux = dx / mag;
+              const uy = dy / mag;
+              const windUx = Math.sin(windToRad);
+              const windUy = Math.cos(windToRad);
+              centerVectorScore = (ux * windUx) + (uy * windUy);
+            }
+          }
+
+          const scored = scoreAiScoutCandidate({ lat, lng }, {
+            status,
+            checkedIn,
+            distanceToBoundsM,
+            centerVectorScore,
+            edgeDensity: metrics.edgeDensity,
+            areaType
+          });
+
+          candidates.push({
+            lat,
+            lng,
+            areaName,
+            areaType,
+            statusOpen: status?.Open === true,
+            checkedIn,
+            score: scored.total,
+            reasons: scored.reasons,
+            distanceToBoundsM
+          });
+        }
+      });
+
+      candidates.sort((a, b) => b.score - a.score);
+      const selected = [];
+      for (const candidate of candidates) {
+        if (selected.length >= 3) break;
+        const tooClose = selected.some(s => map.distance([s.lat, s.lng], [candidate.lat, candidate.lng]) < 280);
+        if (tooClose) continue;
+        selected.push(candidate);
+      }
+      return selected;
+    }
+
+    function renderAiScoutSuggestions(results) {
+      if (aiScoutSuggestionLayer) {
+        map.removeLayer(aiScoutSuggestionLayer);
+        aiScoutSuggestionLayer = null;
+      }
+
+      if (!results.length) return;
+
+      const markers = [];
+      results.forEach((spot, idx) => {
+        const color = idx === 0 ? "#22c55e" : (idx === 1 ? "#eab308" : "#f97316");
+        const marker = L.circleMarker([spot.lat, spot.lng], {
+          radius: 8,
+          color: "#11161a",
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 0.92
+        });
+        const windDir = Number.isFinite(currentWind?.direction) ? getWindDirection(currentWind.direction) : "--";
+        marker.bindPopup(
+          `<strong>Scout Pick ${idx + 1}</strong><br>` +
+          `Area: ${spot.areaName}<br>` +
+          `Score: ${spot.score}/100<br>` +
+          `Type: ${spot.areaType || "HA"}<br>` +
+          `Pressure: ${spot.checkedIn} signed in<br>` +
+          `Wind: ${windDir}<br>` +
+          `<small>${spot.reasons.join(" • ")}</small>`
+        );
+        markers.push(marker);
+      });
+
+      aiScoutSuggestionLayer = L.layerGroup(markers).addTo(map);
+    }
+
+    async function runAiScoutAnalysis() {
+      if (!flwAreasLayer) {
+        await fetchAreaStatus();
+      }
+
+      runAiScoutBtn.disabled = true;
+      runAiScoutBtn.textContent = "Analyzing...";
+      aiScoutContent.innerHTML = '<div class="loading">Analyzing visible terrain, wind, and pressure signals...</div>';
+
+      try {
+        if (!lastWeatherData) {
+          await fetchWeather();
+        }
+
+        const results = buildAiScoutCandidates();
+        renderAiScoutSuggestions(results);
+
+        if (!results.length) {
+          aiScoutContent.innerHTML = '<div class="loading">No good suggestions in current view. Try panning to hunting areas or refreshing status.</div>';
+          return;
+        }
+
+        const cards = results.map((spot, idx) => {
+          const label = idx === 0 ? "Top Pick" : (idx === 1 ? "Secondary" : "Alternate");
+          const statusText = spot.statusOpen ? "OPEN" : "UNKNOWN";
+          return `
+            <div class="ai-scout-card">
+              <strong>${label}: ${spot.areaName}</strong>
+              <div class="ai-scout-score">Score ${spot.score}/100 • ${statusText} • ${spot.checkedIn} signed in</div>
+              <div style="margin-top:6px; font-size:13px; line-height:1.45;">${spot.reasons.join(". ")}.</div>
+              <div style="margin-top:6px; font-size:12px; color: var(--muted);">Approx. ${Math.round(spot.distanceToBoundsM)}m from nearest area edge.</div>
+            </div>
+          `;
+        }).join("");
+
+        const windDir = Number.isFinite(currentWind?.direction) ? getWindDirection(currentWind.direction) : "--";
+        const windMph = Number.isFinite(currentWind?.speed) ? (currentWind.speed * 0.621371).toFixed(1) : "--";
+        aiScoutContent.innerHTML = `
+          <div class="ai-scout-note" style="margin-top:0; margin-bottom: 8px;">
+            View-based scouting using open status, area geometry, hunter pressure proxy, and wind (${windMph} mph ${windDir}).
+          </div>
+          ${cards}
+        `;
+      } catch (err) {
+        console.error("AI Scout analysis failed:", err);
+        aiScoutContent.innerHTML = '<div class="loading" style="color: #dc2626;">Could not analyze this view right now. Try again after status/weather refresh.</div>';
+      } finally {
+        runAiScoutBtn.disabled = false;
+        runAiScoutBtn.textContent = "Analyze View";
+      }
+    }
+
     function displayWeather(current, locationLabel = LOCATION.name, sunData = null) {
       const tempF = (current.temperature_2m * 9/5 + 32).toFixed(1);
       const feelsLikeF = (current.apparent_temperature * 9/5 + 32).toFixed(1);
@@ -4715,6 +5105,25 @@
     weatherBtn.addEventListener("click", () => {
       weatherModal.classList.add("open");
       fetchWeather();
+    });
+
+    aiScoutBtn.addEventListener("click", () => {
+      aiScoutModal.classList.add("open");
+      runAiScoutAnalysis();
+    });
+
+    runAiScoutBtn.addEventListener("click", () => {
+      runAiScoutAnalysis();
+    });
+
+    aiScoutPanelClose.addEventListener("click", () => {
+      aiScoutModal.classList.remove("open");
+    });
+
+    aiScoutModal.addEventListener("click", (e) => {
+      if (e.target === aiScoutModal) {
+        aiScoutModal.classList.remove("open");
+      }
     });
 
     weatherPanelClose.addEventListener("click", () => {
