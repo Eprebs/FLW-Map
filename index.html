@@ -1651,8 +1651,9 @@
 
     function shouldRenderContourForZoom(elev, zoom) {
       if (!Number.isFinite(elev)) return zoom >= 14;
-      if (zoom <= 11) return isMultiple(elev, 50);
-      if (zoom <= 13) return isMultiple(elev, 20) || isMultiple(elev, 10);
+      if (zoom <= 10) return isMultiple(elev, 40) || isMultiple(elev, 20);
+      if (zoom <= 12) return isMultiple(elev, 20) || isMultiple(elev, 10);
+      if (zoom <= 13) return isMultiple(elev, 10) || isMultiple(elev, 5);
       return true;
     }
 
@@ -1660,16 +1661,34 @@
       const geometry = feature?.geometry;
       if (!geometry) return false;
 
+      const boundsWest = bounds.getWest();
+      const boundsEast = bounds.getEast();
+      const boundsSouth = bounds.getSouth();
+      const boundsNorth = bounds.getNorth();
+
       const scanCoords = (coords) => {
+        let minLng = Infinity;
+        let maxLng = -Infinity;
+        let minLat = Infinity;
+        let maxLat = -Infinity;
+
         for (let i = 0; i < coords.length; i++) {
           const pair = coords[i];
           if (!Array.isArray(pair) || pair.length < 2) continue;
           const lng = Number(pair[0]);
           const lat = Number(pair[1]);
           if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-          if (bounds.contains([lat, lng])) return true;
+
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
         }
-        return false;
+
+        if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return false;
+        const intersectsLng = maxLng >= boundsWest && minLng <= boundsEast;
+        const intersectsLat = maxLat >= boundsSouth && minLat <= boundsNorth;
+        return intersectsLng && intersectsLat;
       };
 
       if (geometry.type === 'LineString') {
@@ -1695,32 +1714,32 @@
       if (isIndex) {
         return {
           isIndex,
-          strokeColor: '#ffe39a',
-          casingColor: 'rgba(52, 35, 10, 0.78)',
-          weight: zoom >= 16 ? 1.7 : zoom >= 14 ? 1.5 : 1.2,
-          casingWeight: zoom >= 16 ? 3.3 : zoom >= 14 ? 3 : 2.5,
-          opacity: zoom >= 15 ? 0.92 : 0.86
+          strokeColor: '#fff3c7',
+          casingColor: 'rgba(40, 27, 9, 0.82)',
+          weight: zoom >= 16 ? 2.2 : zoom >= 14 ? 1.95 : 1.6,
+          casingWeight: zoom >= 16 ? 4.1 : zoom >= 14 ? 3.6 : 3.1,
+          opacity: 0.98
         };
       }
 
       if (isSecondary) {
         return {
           isIndex,
-          strokeColor: '#dcb95b',
-          casingColor: 'rgba(45, 30, 9, 0.58)',
-          weight: zoom >= 16 ? 1.15 : zoom >= 14 ? 1.0 : 0.9,
-          casingWeight: zoom >= 16 ? 2.2 : zoom >= 14 ? 2.0 : 1.8,
-          opacity: zoom >= 14 ? 0.72 : 0.62
+          strokeColor: '#f0ce77',
+          casingColor: 'rgba(35, 23, 8, 0.66)',
+          weight: zoom >= 16 ? 1.65 : zoom >= 14 ? 1.45 : 1.25,
+          casingWeight: zoom >= 16 ? 3.0 : zoom >= 14 ? 2.7 : 2.3,
+          opacity: zoom >= 14 ? 0.88 : 0.82
         };
       }
 
       return {
         isIndex,
-        strokeColor: '#9b8643',
-        casingColor: 'rgba(37, 24, 8, 0.42)',
-        weight: zoom >= 16 ? 0.75 : zoom >= 14 ? 0.66 : 0.55,
-        casingWeight: zoom >= 16 ? 1.5 : zoom >= 14 ? 1.35 : 1.2,
-        opacity: zoom >= 16 ? 0.58 : zoom >= 14 ? 0.5 : 0.42
+        strokeColor: '#d8b867',
+        casingColor: 'rgba(31, 20, 7, 0.54)',
+        weight: zoom >= 16 ? 1.1 : zoom >= 14 ? 1.0 : 0.9,
+        casingWeight: zoom >= 16 ? 2.0 : zoom >= 14 ? 1.8 : 1.6,
+        opacity: zoom >= 16 ? 0.76 : zoom >= 14 ? 0.68 : 0.62
       };
     }
 
@@ -1741,12 +1760,16 @@
         return null;
       }
 
-      const viewportBounds = map.getBounds().pad(0.2);
+      const viewportBounds = map.getBounds().pad(0.35);
 
-      const filteredFeatures = data.features.filter((feature) => {
+      let filteredFeatures = data.features.filter((feature) => {
         const elev = getFeatureElevation(feature);
         return shouldRenderContourForZoom(elev, zoom) && featureIntersectsBounds(feature, viewportBounds);
       });
+
+      if (filteredFeatures.length < 140) {
+        filteredFeatures = data.features.filter((feature) => featureIntersectsBounds(feature, viewportBounds));
+      }
 
       if (!filteredFeatures.length) {
         return null;
