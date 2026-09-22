@@ -1589,7 +1589,7 @@
     // Local fallback data (used when remote API is unavailable)
     async function loadLocalContoursData() {
       try {
-        contoursMedData = await fetch('/contours_med.geojson').then(r => {
+        contoursMedData = await fetch('/contours_med.geojson', { cache: 'no-store' }).then(r => {
           if (!r.ok) throw new Error(`Failed to load med: ${r.status}`);
           return r.json();
         });
@@ -1598,7 +1598,7 @@
       }
 
       try {
-        contoursHighData = await fetch('/contours_high.geojson').then(r => {
+        contoursHighData = await fetch('/contours_high.geojson', { cache: 'no-store' }).then(r => {
           if (!r.ok) throw new Error(`Failed to load high: ${r.status}`);
           return r.json();
         });
@@ -1650,11 +1650,12 @@
     }
 
     function getZoomDensityStep(zoom) {
-      if (zoom <= 9) return 10;
-      if (zoom <= 10) return 7;
-      if (zoom <= 11) return 5;
-      if (zoom <= 12) return 3;
-      if (zoom <= 13) return 2;
+      if (zoom <= 8) return 8;
+      if (zoom <= 9) return 5;
+      if (zoom <= 10) return 2;
+      if (zoom <= 11) return 2;
+      if (zoom <= 12) return 1;
+      if (zoom <= 13) return 1;
       return 1;
     }
 
@@ -1946,9 +1947,9 @@
 
       let sourceData = data;
       if (sourceData === null) {
-        if (zoom >= 12 && contoursHighData) {
+        if (zoom >= 10 && contoursHighData) {
           sourceData = contoursHighData;
-        } else if (zoom >= 10 && contoursMedData) {
+        } else if (zoom >= 8 && contoursMedData) {
           sourceData = contoursMedData;
         }
       }
