@@ -1666,13 +1666,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const index = await ensureContourTileIndex();
-      const nativeMaxZoom = 16;
-      const sourceZ = Math.min(z, nativeMaxZoom);
-      const zoomDelta = z - sourceZ;
-      const scale = zoomDelta > 0 ? Math.pow(2, zoomDelta) : 1;
-      const sourceX = zoomDelta > 0 ? Math.floor(x / scale) : x;
-      const sourceY = zoomDelta > 0 ? Math.floor(y / scale) : y;
-      const tile = index.getTile(sourceZ, sourceX, sourceY);
+      const tile = index.getTile(z, x, y);
 
       if (!tile || !Array.isArray(tile.features) || !tile.features.length) {
         res.writeHead(204, {
