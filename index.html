@@ -938,34 +938,6 @@
       margin-top: 10px;
     }
 
-    .ai-scout-breakdown {
-      margin-top: 8px;
-      display: grid;
-      gap: 5px;
-    }
-
-    .ai-scout-break-row {
-      display: grid;
-      grid-template-columns: 72px 1fr 34px;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .ai-scout-break-bar {
-      height: 6px;
-      border-radius: 999px;
-      background: rgba(114, 132, 144, 0.28);
-      overflow: hidden;
-    }
-
-    .ai-scout-break-fill {
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, var(--blaze), var(--gold));
-    }
-
     /* Area legend */
     #areaLegend {
       position: absolute;
@@ -4944,15 +4916,13 @@
         reasons.push(`Approx ${Math.round(distanceFromUserM)}m from your current position`);
       }
 
-      const breakdown = {
-        status: Math.round(Math.max(0, Math.min(100, (statusScore / 28) * 100))),
-        pressure: Math.round(Math.max(0, Math.min(100, (pressureScore / 22) * 100))),
-        wind: Math.round(Math.max(0, Math.min(100, (windScore / 18) * 100))),
-        terrain: Math.round(Math.max(0, Math.min(100, ((shapeScore + edgeScore) / 32) * 100))),
-        access: Math.round(Math.max(0, Math.min(100, (1 - (walkPenalty / 20)) * 100)))
-      };
+      return { total, reasons: reasons.slice(0, 3) };
+    }
 
-      return { total, reasons: reasons.slice(0, 4), breakdown };
+    function getScoutConfidenceLabel(score) {
+      if (score >= 80) return "High confidence";
+      if (score >= 65) return "Medium confidence";
+      return "Exploratory pick";
     }
 
     function buildAiScoutCandidates() {
@@ -5051,7 +5021,6 @@
             checkedIn,
             score: scored.total,
             reasons: scored.reasons,
-            breakdown: scored.breakdown,
             distanceToBoundsM,
             distanceFromUserM
           });
@@ -5108,6 +5077,8 @@
       const markers = [];
       results.forEach((spot, idx) => {
         const color = idx === 0 ? "#22c55e" : (idx === 1 ? "#eab308" : "#f97316");
+        const confidence = getScoutConfidenceLabel(spot.score);
+        const whyText = (Array.isArray(spot.reasons) ? spot.reasons.slice(0, 2) : []).join(" • ") || "Balanced terrain and pressure signals";
         const marker = L.circleMarker([spot.lat, spot.lng], {
           radius: 8,
           color: "#11161a",
@@ -5119,13 +5090,12 @@
         marker.bindPopup(
           `<strong>Scout Pick ${idx + 1}</strong><br>` +
           `Area: ${spot.areaName}<br>` +
-          `Score: ${spot.score}/100<br>` +
+          `Confidence: ${confidence}<br>` +
           `Status: ${spot.statusOpen ? "OPEN" : (spot.statusClosed ? "CLOSED" : "UNKNOWN")}<br>` +
           `Type: ${spot.areaType || "HA"}<br>` +
           `Pressure: ${spot.checkedIn} signed in<br>` +
           `Wind: ${windDir}<br>` +
-          `<small>${spot.reasons.join(" • ")}</small><br>` +
-          `<small>Status ${spot.breakdown?.status ?? 0}% • Pressure ${spot.breakdown?.pressure ?? 0}% • Wind ${spot.breakdown?.wind ?? 0}% • Terrain ${spot.breakdown?.terrain ?? 0}% • Access ${spot.breakdown?.access ?? 0}%</small><br>` +
+          `<small>Why this spot: ${whyText}</small><br>` +
           `<button type="button" class="save-scout-waypoint-btn" data-scout-index="${idx}" style="display:block;width:100%;margin-top:8px;padding:6px;background:linear-gradient(180deg, rgba(42,74,64,0.95), rgba(31,58,49,0.95));color:var(--text);border:1px solid rgba(124,151,167,0.35);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">Save as Pin</button>`
         );
         markers.push(marker);
@@ -5159,29 +5129,17 @@
         const cards = results.map((spot, idx) => {
           const label = idx === 0 ? "Top Pick" : (idx === 1 ? "Secondary" : "Alternate");
           const statusText = spot.statusOpen ? "OPEN" : (spot.statusClosed ? "CLOSED" : "UNKNOWN");
+          const confidence = getScoutConfidenceLabel(spot.score);
+          const whyText = (Array.isArray(spot.reasons) ? spot.reasons.slice(0, 2) : []).join(" • ") || "Balanced terrain and pressure signals";
           const walkText = Number.isFinite(spot.distanceFromUserM)
             ? `${Math.round(spot.distanceFromUserM)}m from you`
             : "distance unavailable";
-          const breakdownRows = [
-            ["Status", spot.breakdown?.status ?? 0],
-            ["Pressure", spot.breakdown?.pressure ?? 0],
-            ["Wind", spot.breakdown?.wind ?? 0],
-            ["Terrain", spot.breakdown?.terrain ?? 0],
-            ["Access", spot.breakdown?.access ?? 0]
-          ].map(([label, value]) => `
-            <div class="ai-scout-break-row">
-              <span>${label}</span>
-              <div class="ai-scout-break-bar"><div class="ai-scout-break-fill" style="width:${Math.max(0, Math.min(100, Number(value) || 0))}%;"></div></div>
-              <span>${Math.max(0, Math.min(100, Number(value) || 0))}%</span>
-            </div>
-          `).join("");
           return `
             <div class="ai-scout-card">
               <strong>${label}: ${spot.areaName}</strong>
-              <div class="ai-scout-score">Score ${spot.score}/100 • ${statusText} • ${spot.checkedIn} signed in</div>
-              <div style="margin-top:6px; font-size:13px; line-height:1.45;">${spot.reasons.join(". ")}.</div>
+              <div class="ai-scout-score">${confidence} • ${statusText} • ${spot.checkedIn} signed in</div>
+              <div style="margin-top:6px; font-size:13px; line-height:1.45;"><strong>Why this spot:</strong> ${whyText}</div>
               <div style="margin-top:6px; font-size:12px; color: var(--muted);">Approx. ${Math.round(spot.distanceToBoundsM)}m from nearest area edge • ${walkText}.</div>
-              <div class="ai-scout-breakdown">${breakdownRows}</div>
               <div style="display:flex; gap:8px; margin-top:8px;">
                 <button type="button" class="modal-btn secondary save-scout-waypoint-btn" data-scout-index="${idx}" style="flex:1;">Save as Pin</button>
               </div>
