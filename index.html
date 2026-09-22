@@ -1649,13 +1649,18 @@
       return rem < epsilon || Math.abs(rem - step) < epsilon;
     }
 
-    function shouldRenderContourForZoom(elev, zoom) {
-      if (!Number.isFinite(elev)) return zoom >= 14;
-      if (zoom <= 10) return isMultiple(elev, 40) || isMultiple(elev, 20);
-      if (zoom <= 11) return isMultiple(elev, 20) || isMultiple(elev, 10);
-      if (zoom <= 12) return isMultiple(elev, 10) || isMultiple(elev, 5);
-      if (zoom <= 13) return isMultiple(elev, 5) || isMultiple(elev, 2.5);
-      return true;
+    function getZoomDensityStep(zoom) {
+      if (zoom <= 9) return 10;
+      if (zoom <= 10) return 7;
+      if (zoom <= 11) return 5;
+      if (zoom <= 12) return 3;
+      if (zoom <= 13) return 2;
+      return 1;
+    }
+
+    function shouldKeepFeatureByZoom(index, zoom) {
+      const step = getZoomDensityStep(zoom);
+      return step <= 1 || index % step === 0;
     }
 
     function hexToRgb(hex) {
@@ -1760,8 +1765,13 @@
       const base = contourStats?.baseInterval || 10;
       const indexStep = zoom >= 15 ? base * 5 : zoom >= 13 ? base * 8 : base * 10;
       const secondaryStep = Math.max(base * 2, indexStep / 2);
-      const isIndex = Number.isFinite(elev) && isMultiple(elev, indexStep);
-      const isSecondary = Number.isFinite(elev) && !isIndex && isMultiple(elev, secondaryStep);
+      const nearMultiple = (value, step) => {
+        if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return false;
+        const ratio = value / step;
+        return Math.abs(ratio - Math.round(ratio)) < 0.08;
+      };
+      const isIndex = Number.isFinite(elev) && nearMultiple(elev, indexStep);
+      const isSecondary = Number.isFinite(elev) && !isIndex && nearMultiple(elev, secondaryStep);
       const normalized = Number.isFinite(elev)
         ? Math.max(0, Math.min(1, (elev - contourStats.min) / contourStats.range))
         : 0.5;
@@ -1817,9 +1827,9 @@
 
       const viewportBounds = map.getBounds().pad(0.35);
 
-      let filteredFeatures = data.features.filter((feature) => {
+      let filteredFeatures = data.features.filter((feature, index) => {
         const elev = getFeatureElevation(feature);
-        return shouldRenderContourForZoom(elev, zoom) && featureIntersectsBounds(feature, viewportBounds);
+        return shouldKeepFeatureByZoom(index, zoom) && featureIntersectsBounds(feature, viewportBounds);
       });
 
       if (filteredFeatures.length < 140) {
