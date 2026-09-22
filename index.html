@@ -957,6 +957,21 @@
       display: none;
     }
 
+    .contour-elev-label {
+      color: rgba(255, 244, 201, 0.9);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-shadow:
+        -1px -1px 0 rgba(38, 28, 12, 0.9),
+        1px -1px 0 rgba(38, 28, 12, 0.9),
+        -1px 1px 0 rgba(38, 28, 12, 0.9),
+        1px 1px 0 rgba(38, 28, 12, 0.9);
+      white-space: nowrap;
+      pointer-events: none;
+      user-select: none;
+    }
+
     /* Small screens */
     @media (max-width: 600px) {
       #hud {
@@ -1562,6 +1577,7 @@
     let contoursMedData = null;
     let contoursHighData = null;
     let currentContoursLayer = null;
+    let currentContoursLabelLayer = null;
     let remoteContoursEnabled = Boolean(CONTOURS_API_BASE);
     let remoteContoursHealthy = true;
     let lastContoursRequestId = 0;
@@ -1602,15 +1618,62 @@
       return `${CONTOURS_API_BASE}/api/contours?bbox=${bbox}&limit=${limit}&simplify=${simplify}`;
     }
 
-    // Style contour lines - dark yellow like OnX
-    function getContoursStyle(zoom) {
-      const weight = zoom >= 16 ? 1 : zoom >= 13 ? 0.7 : 0.5;
+    function getFeatureElevation(feature) {
+      const props = feature?.properties || {};
+      const raw = props.ELEV ?? props.elev ?? props.Elevation ?? props.CONTOUR;
+      const elev = Number(raw);
+      return Number.isFinite(elev) ? elev : null;
+    }
+
+    function isMultiple(value, step) {
+      if (!Number.isFinite(value) || !Number.isFinite(step) || step <= 0) return false;
+      const rem = Math.abs(value % step);
+      const epsilon = 0.01;
+      return rem < epsilon || Math.abs(rem - step) < epsilon;
+    }
+
+    function shouldRenderContourForZoom(elev, zoom) {
+      if (!Number.isFinite(elev)) return zoom >= 14;
+      if (zoom <= 11) return isMultiple(elev, 100);
+      if (zoom <= 13) return isMultiple(elev, 40) || isMultiple(elev, 20);
+      return true;
+    }
+
+    function getContourVisual(elev, zoom) {
+      const indexStep = zoom >= 15 ? 50 : 100;
+      const secondaryStep = indexStep / 2;
+      const isIndex = Number.isFinite(elev) && isMultiple(elev, indexStep);
+      const isSecondary = Number.isFinite(elev) && !isIndex && isMultiple(elev, secondaryStep);
+
+      if (isIndex) {
+        return {
+          isIndex,
+          strokeColor: '#ffe39a',
+          casingColor: 'rgba(52, 35, 10, 0.78)',
+          weight: zoom >= 16 ? 1.7 : zoom >= 14 ? 1.5 : 1.2,
+          casingWeight: zoom >= 16 ? 3.3 : zoom >= 14 ? 3 : 2.5,
+          opacity: zoom >= 15 ? 0.92 : 0.86
+        };
+      }
+
+      if (isSecondary) {
+        return {
+          isIndex,
+          strokeColor: '#dcb95b',
+          casingColor: 'rgba(45, 30, 9, 0.58)',
+          weight: zoom >= 16 ? 1.15 : zoom >= 14 ? 1.0 : 0.9,
+          casingWeight: zoom >= 16 ? 2.2 : zoom >= 14 ? 2.0 : 1.8,
+          opacity: zoom >= 14 ? 0.72 : 0.62
+        };
+      }
+
       return {
-        color: '#c9a227',
-        weight: weight,
-        opacity: 0.5,
-        lineCap: 'round',
-        lineJoin: 'round'
+        isIndex,
+        strokeColor: '#9b8643',
+        casingColor: 'rgba(37, 24, 8, 0.42)',
+        weight: zoom >= 16 ? 0.75 : zoom >= 14 ? 0.66 : 0.55,
+        casingWeight: zoom >= 16 ? 1.5 : zoom >= 14 ? 1.35 : 1.2,
+        opacity: zoom >= 16 ? 0.58 : zoom >= 14 ? 0.5 : 0.42
       };
     }
 
@@ -1620,15 +1683,13 @@
         console.warn('No contour data available');
         return null;
       }
-      
-      const style = getContoursStyle(zoom);
-      
+
       // Simplify geometry for better performance - reduce coordinate density
-      const simplificationFactor = zoom >= 16 ? 0 : zoom >= 13 ? 1 : 2;
-      
+      const simplificationFactor = zoom >= 16 ? 0 : zoom >= 14 ? 1 : 2;
+
       const simplifyGeometry = (feature) => {
         if (simplificationFactor === 0) return feature;
-        
+
         if (feature.geometry.type === 'LineString') {
           const coords = feature.geometry.coordinates;
           const simplified = coords.filter((c, i) => i % (simplificationFactor + 1) === 0);
@@ -1639,17 +1700,97 @@
         }
         return feature;
       };
-      
+
+      const filteredFeatures = data.features.filter((feature) => {
+        const elev = getFeatureElevation(feature);
+        return shouldRenderContourForZoom(elev, zoom);
+      });
+
+      if (!filteredFeatures.length) {
+        return null;
+      }
+
       const simplifiedData = {
         ...data,
-        features: data.features.map(simplifyGeometry)
+        features: filteredFeatures.map(simplifyGeometry)
       };
-      
-      // Use SVG renderer for better compatibility
-      return L.geoJSON(simplifiedData, {
-        style: () => style,
+
+      const casingLayer = L.geoJSON(simplifiedData, {
+        style: (feature) => {
+          const elev = getFeatureElevation(feature);
+          const visual = getContourVisual(elev, zoom);
+          return {
+            color: visual.casingColor,
+            weight: visual.casingWeight,
+            opacity: Math.min(1, visual.opacity * 0.86),
+            lineCap: 'round',
+            lineJoin: 'round'
+          };
+        },
         interactive: false
       });
+
+      const strokeLayer = L.geoJSON(simplifiedData, {
+        style: (feature) => {
+          const elev = getFeatureElevation(feature);
+          const visual = getContourVisual(elev, zoom);
+          return {
+            color: visual.strokeColor,
+            weight: visual.weight,
+            opacity: visual.opacity,
+            lineCap: 'round',
+            lineJoin: 'round'
+          };
+        },
+        interactive: false
+      });
+
+      if (currentContoursLabelLayer) {
+        map.removeLayer(currentContoursLabelLayer);
+        currentContoursLabelLayer = null;
+      }
+
+      if (zoom >= 14) {
+        const labels = [];
+        const labelStep = zoom >= 16 ? 6 : 10;
+        let labelCounter = 0;
+
+        strokeLayer.eachLayer((layer) => {
+          const feature = layer.feature;
+          const elev = getFeatureElevation(feature);
+          const visual = getContourVisual(elev, zoom);
+          if (!visual.isIndex || !Number.isFinite(elev)) return;
+
+          labelCounter++;
+          if (labelCounter % labelStep !== 0) return;
+
+          const latLngs = layer.getLatLngs();
+          const lineCoords = Array.isArray(latLngs?.[0]) ? latLngs[0] : latLngs;
+          if (!Array.isArray(lineCoords) || lineCoords.length < 3) return;
+
+          const midpoint = lineCoords[Math.floor(lineCoords.length / 2)];
+          if (!midpoint || typeof midpoint.lat !== 'number' || typeof midpoint.lng !== 'number') return;
+
+          labels.push(
+            L.marker(midpoint, {
+              icon: L.divIcon({
+                className: 'contour-elev-label',
+                html: `${Math.round(elev)}'`,
+                iconSize: null
+              }),
+              interactive: false,
+              keyboard: false
+            })
+          );
+        });
+
+        if (labels.length) {
+          currentContoursLabelLayer = L.layerGroup(labels);
+          currentContoursLabelLayer.addTo(map);
+        }
+      }
+
+      return L.layerGroup([casingLayer, strokeLayer]);
     }
 
     function renderContoursLayer(data) {
@@ -1659,6 +1800,10 @@
       if (currentContoursLayer) {
         map.removeLayer(currentContoursLayer);
         currentContoursLayer = null;
+      }
+      if (currentContoursLabelLayer) {
+        map.removeLayer(currentContoursLabelLayer);
+        currentContoursLabelLayer = null;
       }
 
       // Add appropriate layer based on zoom (for local fallback)
@@ -1756,6 +1901,10 @@
         if (currentContoursLayer) {
           map.removeLayer(currentContoursLayer);
           currentContoursLayer = null;
+        }
+        if (currentContoursLabelLayer) {
+          map.removeLayer(currentContoursLabelLayer);
+          currentContoursLabelLayer = null;
         }
       }
     });
