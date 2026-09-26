@@ -1209,6 +1209,10 @@
         <input type="radio" name="basemap" value="otm">
         OpenTopoMap
       </label>
+      <label class="drawer-label">
+        <input type="radio" name="basemap" value="lidar">
+        LiDAR Hillshade (FLW)
+      </label>
       <div id="imageryDateInfo" class="drawer-info" style="margin-top: 6px;">
         Imagery date: ESRI World Imagery varies by location/zoom; no single capture date.
       </div>
@@ -1775,6 +1779,16 @@
       { maxZoom: 17, attribution: "OpenTopoMap" }
     );
 
+    const lidarFlw = L.tileLayer(
+      "tiles/lidar/flw/{z}/{x}/{y}.jpg",
+      {
+        minZoom: 8,
+        maxZoom: 16,
+        bounds: L.latLngBounds([37.57, -92.29], [37.83, -92.0]),
+        attribution: "USGS 3DEP LiDAR"
+      }
+    );
+
     satellite.addTo(map);
 
     // Overlays
@@ -1966,13 +1980,14 @@
 
     function setBasemap(value) {
       currentBasemap = value;
-      [satellite, osm, usgsTopo, esriTopo, otmTopo].forEach(l => map.removeLayer(l));
+      [satellite, osm, usgsTopo, esriTopo, otmTopo, lidarFlw].forEach(l => map.removeLayer(l));
       switch (value) {
         case "satellite": satellite.addTo(map); break;
         case "osm": osm.addTo(map); break;
         case "usgs": usgsTopo.addTo(map); break;
         case "esri": esriTopo.addTo(map); break;
         case "otm": otmTopo.addTo(map); break;
+        case "lidar": lidarFlw.addTo(map); break;
       }
       updateSatelliteStreetLabelsOverlay();
       updateBasemapDateInfo(value);
