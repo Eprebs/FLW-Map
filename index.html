@@ -51,6 +51,18 @@
       --gold-strong: var(--blaze-strong);
     }
 
+    /* GPS heading arrow: obsidian badge + blaze arrow, rotated by the phone compass */
+    .gps-heading-icon {
+      background: none;
+      border: none;
+    }
+    .gps-heading-icon .gps-arrow-svg {
+      display: block;
+      transform-origin: 50% 50%;
+      transition: transform 0.25s ease-out;
+      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+    }
+
     html, body {
       margin: 0;
       padding: 0;
@@ -2148,6 +2160,7 @@
     let gpsWatchId = null;
     let currentPosition = null;
     let gpsMarker = null;
+    let compassHeading = null; // degrees clockwise from north, via the phone compass
     let gpsAccuracyCircle = null;
     let didCenterOnInitialGps = false;
     let lastWeatherFetchAt = 0;
@@ -2174,14 +2187,22 @@
       const latlng = L.latLng(latitude, longitude);
 
       if (!gpsMarker) {
-        gpsMarker = L.circleMarker(latlng, {
-          radius: 7,
-          color: "#11161a",
-          weight: 2,
-          fillColor: "#ff7f36",
-          fillOpacity: 0.95,
-          pane: "markerPane"
+        gpsMarker = L.marker(latlng, {
+          icon: L.divIcon({
+            html: `<svg class="gps-arrow-svg" width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">`
+              + `<circle cx="22" cy="22" r="20" fill="#151a1e" opacity="0.88" stroke="#ff7f36" stroke-width="2"/>`
+              + `<path d="M22 8 L30 30 L22 25.5 L14 30 Z" fill="#ff7f36" stroke="#151a1e" stroke-width="1.5" stroke-linejoin="round"/>`
+              + `<circle cx="22" cy="22" r="2.6" fill="#ecf2f0"/>`
+              + `</svg>`,
+            iconSize: [44, 44],
+            iconAnchor: [22, 22],
+            className: "gps-heading-icon"
+          }),
+          pane: "markerPane",
+          interactive: false,
+          keyboard: false
         }).addTo(map);
+        updateGpsArrowRotation();
       } else {
         gpsMarker.setLatLng(latlng);
       }
@@ -2199,6 +2220,41 @@
       } else {
         gpsAccuracyCircle.setLatLng(latlng);
         gpsAccuracyCircle.setRadius(Math.max(1, accuracy || 0));
+      }
+    }
+
+    function updateGpsArrowRotation() {
+      if (!gpsMarker || compassHeading === null) return;
+      const el = gpsMarker.getElement();
+      const svg = el ? el.querySelector(".gps-arrow-svg") : null;
+      if (svg) svg.style.transform = "rotate(" + compassHeading + "deg)";
+    }
+
+    function handleDeviceOrientation(e) {
+      let heading = null;
+      if (e && typeof e.webkitCompassHeading === "number" && !isNaN(e.webkitCompassHeading)) {
+        heading = e.webkitCompassHeading; // iOS Safari: already degrees clockwise from north
+      } else if (e && e.absolute && typeof e.alpha === "number" && !isNaN(e.alpha)) {
+        heading = (360 - e.alpha) % 360; // absolute orientation: alpha runs counter-clockwise from north
+      }
+      if (heading !== null) {
+        compassHeading = heading;
+        updateGpsArrowRotation();
+      }
+    }
+
+    function enableCompass() {
+      if (typeof DeviceOrientationEvent === "undefined") return;
+      if (typeof DeviceOrientationEvent.requestPermission === "function") {
+        // iOS 13+: compass access requires an explicit user gesture (wired to the Snap button).
+        DeviceOrientationEvent.requestPermission()
+          .then(state => {
+            if (state === "granted") window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+          })
+          .catch(err => console.warn("Compass permission not granted:", err));
+      } else {
+        window.addEventListener("deviceorientationabsolute", handleDeviceOrientation, true);
+        window.addEventListener("deviceorientation", handleDeviceOrientation, true);
       }
     }
 
@@ -2257,10 +2313,12 @@
     }
 
     startGPS();
+    enableCompass(); // Android/desktop start listening right away; iOS waits for a tap
     centerOnCurrentLocationOnce();
 
     const gpsFollowBtn = document.getElementById("gpsFollowBtn");
     gpsFollowBtn.addEventListener("click", () => {
+      enableCompass(); // iOS requires a tap gesture before the compass can be read
       if (!currentPosition) {
         alert("No GPS fix yet.");
         return;
