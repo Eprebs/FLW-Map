@@ -2305,8 +2305,14 @@
       let heading = null;
       if (e && typeof e.webkitCompassHeading === "number" && !isNaN(e.webkitCompassHeading)) {
         heading = e.webkitCompassHeading; // iOS Safari: already degrees clockwise from north
-      } else if (e && e.absolute && typeof e.alpha === "number" && !isNaN(e.alpha)) {
-        heading = (360 - e.alpha) % 360; // absolute orientation: alpha runs counter-clockwise from north
+      } else if (e && typeof e.alpha === "number" && !isNaN(e.alpha)) {
+        // Android Chrome: alpha runs counter-clockwise from north. Many devices never
+        // set e.absolute, so accept alpha regardless and compensate for screen orientation.
+        heading = (360 - e.alpha) % 360;
+        let so = 0;
+        if (screen.orientation && typeof screen.orientation.angle === "number") so = screen.orientation.angle;
+        else if (typeof window.orientation === "number") so = window.orientation;
+        heading = (heading + so + 360) % 360;
       }
       if (heading !== null) {
         compassHeading = heading;
