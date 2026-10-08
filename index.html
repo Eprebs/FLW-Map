@@ -2294,8 +2294,22 @@
       }
     }
 
+    let compassUsingAbsolute = false;
+    let compassFallbackTimer = null;
+
+    function handleAbsoluteOrientation(e) {
+      compassUsingAbsolute = true; // earth-referenced stream is live; ignore the fallback
+      handleDeviceOrientation(e);
+    }
+
+    function handleFallbackOrientation(e) {
+      if (compassUsingAbsolute) return;
+      handleDeviceOrientation(e);
+    }
+
     function enableCompass() {
       if (typeof DeviceOrientationEvent === "undefined") return;
+      disableCompass(); // clear any stale listeners before (re)subscribing
       if (typeof DeviceOrientationEvent.requestPermission === "function") {
         // iOS 13+: compass access requires an explicit user gesture (wired to the Snap button).
         DeviceOrientationEvent.requestPermission()
@@ -2304,9 +2318,26 @@
           })
           .catch(err => console.warn("Compass permission not granted:", err));
       } else {
-        window.addEventListener("deviceorientationabsolute", handleDeviceOrientation, true);
-        window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+        // Android: use ONLY the earth-referenced absolute stream. Feeding both
+        // "deviceorientationabsolute" and "deviceorientation" into the heading
+        // mixes two different alphas and the map never settles on true north.
+        compassUsingAbsolute = false;
+        window.addEventListener("deviceorientationabsolute", handleAbsoluteOrientation, true);
+        // Fallback: some devices never fire the absolute event — then use the regular stream.
+        compassFallbackTimer = setTimeout(() => {
+          if (compassMode && !compassUsingAbsolute) {
+            window.addEventListener("deviceorientation", handleFallbackOrientation, true);
+          }
+        }, 1500);
       }
+    }
+
+    function disableCompass() {
+      window.removeEventListener("deviceorientationabsolute", handleAbsoluteOrientation, true);
+      window.removeEventListener("deviceorientation", handleDeviceOrientation, true);
+      window.removeEventListener("deviceorientation", handleFallbackOrientation, true);
+      if (compassFallbackTimer) { clearTimeout(compassFallbackTimer); compassFallbackTimer = null; }
+      compassUsingAbsolute = false;
     }
 
     function shortestArcDeg(from, to) {
@@ -2348,6 +2379,7 @@
         }
         if (compassHeading !== null) applyCompassBearing(compassHeading);
       } else {
+        disableCompass();
         try { if (map && typeof map.setBearing === "function") map.setBearing(0); } catch (err) {}
         lastBearingSet = 0;
         smoothHeading = null;
