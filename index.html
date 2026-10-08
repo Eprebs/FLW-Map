@@ -4994,6 +4994,85 @@
       return { area, perimeter, edgeDensity };
     }
 
+    function ringToMeters(ring) {
+      if (!Array.isArray(ring) || ring.length < 4) return { points: [], refLat: 0 };
+      const refLat = ring.reduce((sum, c) => sum + Number(c?.[1] || 0), 0) / ring.length;
+      const points = ring.map(c => toLocalMeters(Number(c?.[1] || 0), Number(c?.[0] || 0), refLat));
+      return { points, refLat };
+    }
+
+    function rayHitDistance(pts, px, py, dx, dy) {
+      let best = Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        const ex = b.x - a.x;
+        const ey = b.y - a.y;
+        const denom = dx * ey - dy * ex;
+        if (Math.abs(denom) < 1e-12) continue;
+        const sx = a.x - px;
+        const sy = a.y - py;
+        const t = (sx * ey - sy * ex) / denom;
+        const u = (sx * dy - sy * dx) / denom;
+        if (t > 1e-9 && u >= 0 && u <= 1 && t < best) best = t;
+      }
+      return best;
+    }
+
+    function narrowestWidthAtPoint(pts, px, py) {
+      let minWidth = Infinity;
+      let maxWidth = 0;
+      for (let k = 0; k < 6; k++) {
+        const ang = (k * Math.PI) / 6;
+        const dx = Math.cos(ang);
+        const dy = Math.sin(ang);
+        const d1 = rayHitDistance(pts, px, py, dx, dy);
+        const d2 = rayHitDistance(pts, px, py, -dx, -dy);
+        if (!Number.isFinite(d1) || !Number.isFinite(d2)) continue;
+        const w = d1 + d2;
+        if (w < minWidth) minWidth = w;
+        if (w > maxWidth) maxWidth = w;
+      }
+      return { minWidth, maxWidth };
+    }
+
+    function findInsideCorners(pts) {
+      const n = pts.length;
+      if (n < 4) return [];
+      let twiceArea = 0;
+      for (let i = 0; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        twiceArea += (a.x * b.y) - (b.x * a.y);
+      }
+      const ccw = twiceArea > 0;
+      const raw = [];
+      for (let i = 0; i < n; i++) {
+        const prev = pts[(i - 1 + n) % n];
+        const cur = pts[i];
+        const next = pts[(i + 1) % n];
+        const v1x = cur.x - prev.x;
+        const v1y = cur.y - prev.y;
+        const v2x = next.x - cur.x;
+        const v2y = next.y - cur.y;
+        const m1 = Math.hypot(v1x, v1y);
+        const m2 = Math.hypot(v2x, v2y);
+        if (m1 < 0.5 || m2 < 0.5) continue;
+        const cross = v1x * v2y - v1y * v2x;
+        const dot = v1x * v2x + v1y * v2y;
+        const turn = Math.atan2(cross, dot);
+        const isConcave = ccw ? turn < 0 : turn > 0;
+        const sharpness = Math.abs(turn) / Math.PI;
+        if (isConcave && sharpness > 0.25) raw.push({ x: cur.x, y: cur.y, sharpness });
+      }
+      const kept = [];
+      for (const c of raw.sort((a, b) => b.sharpness - a.sharpness)) {
+        if (kept.some(k => Math.hypot(k.x - c.x, k.y - c.y) < 40)) continue;
+        kept.push(c);
+      }
+      return kept;
+    }
+
     function getAiScoutSettings() {
       return {
         mode: String(aiScoutModeSelect?.value || "morning"),
@@ -5004,7 +5083,7 @@
     }
 
     function scoreAiScoutCandidate(candidate, context, settings) {
-      const { status, checkedIn, distanceToBoundsM, centerVectorScore, edgeDensity, areaType, distanceFromUserM } = context;
+      const { status, checkedIn, distanceToBoundsM, centerVectorScore, edgeDensity, areaType, distanceFromUserM, pinchStrength, nearestCornerM, cornerSharpness } = context;
       const isOpen = status?.Open === true;
       const isClosed = status?.Open === false;
       const isUnknown = !status;
@@ -5013,7 +5092,7 @@
       const pressureScore = Math.max(0, 22 - Math.min(22, checkedIn * 2.5));
 
       const idealBufferM = settings.mode === "rut" ? 120 : 90;
-      const edgeScore = Math.max(0, 20 - (Math.abs(distanceToBoundsM - idealBufferM) / idealBufferM) * 20);
+      const edgeScore = Math.max(0, 12 - (Math.abs(distanceToBoundsM - idealBufferM) / idealBufferM) * 12);
 
       const windScore = Number.isFinite(centerVectorScore)
         ? Math.max(0, Math.min(18, ((centerVectorScore + 1) / 2) * 18))
@@ -5042,11 +5121,28 @@
         edgePenalty = Math.min(10, (edgeDensity - 7.4) * 2.8);
       }
 
-      const totalRaw = statusScore + pressureScore + edgeScore + windScore + shapeScore + typeScore + modeBonus - walkPenalty - edgePenalty;
+      let funnelScore = 0;
+      const funnelReasons = [];
+      if (Number.isFinite(pinchStrength) && pinchStrength > 0.3) {
+        funnelScore += Math.min(8, pinchStrength * 8);
+        funnelReasons.push(pinchStrength > 0.6 ? "Pinch point \u2014 neck-down travel corridor" : "Terrain narrows here, concentrating travel");
+      }
+      if (Number.isFinite(nearestCornerM) && nearestCornerM < 250 && cornerSharpness > 0.3) {
+        const cs = Math.max(0, 1 - nearestCornerM / 250) * Math.min(1, cornerSharpness);
+        if (cs > 0.25) {
+          funnelScore += Math.min(6, cs * 6);
+          funnelReasons.push("Inside corner \u2014 sharp boundary turn");
+        }
+      }
+      funnelScore = Math.min(14, funnelScore);
+      if (settings.mode === "rut") funnelScore = Math.min(20, funnelScore * 1.5);
+
+      const totalRaw = statusScore + pressureScore + edgeScore + windScore + shapeScore + typeScore + funnelScore + modeBonus - walkPenalty - edgePenalty;
       const total = Math.round(Math.max(0, Math.min(100, totalRaw)));
 
       const reasons = [];
       reasons.push(isOpen ? "Area is currently OPEN" : (isClosed ? "Area currently closed (future planning only)" : "Status feed uncertain; terrain still usable"));
+      for (const fr of funnelReasons) reasons.push(fr);
       if (checkedIn <= 2) reasons.push("Lower visible hunter pressure");
       if (distanceToBoundsM >= 60 && distanceToBoundsM <= 170) reasons.push("Useful interior buffer from boundary pressure");
       if (Number.isFinite(centerVectorScore) && centerVectorScore > 0.2) reasons.push("Wind setup helps keep scent off likely core movement");
@@ -5125,6 +5221,8 @@
         if (!center) return;
 
         const metrics = computeRingMetrics(ring);
+        const { points: ringM, refLat: ringRefLat } = ringToMeters(ring);
+        const insideCorners = ringM.length > 3 ? findInsideCorners(ringM) : [];
         const checkedIn = getCheckedInCount(status);
         const areaName = String(feature?.properties?.area_name || "Area").trim() || "Area";
         const areaType = String(feature?.properties?.area_type || "HA").trim() || "HA";
@@ -5156,6 +5254,22 @@
             : NaN;
           const distanceFromCenterM = map.distance([lat, lng], mapCenter);
 
+          let pinchStrength = 0;
+          let nearestCornerM = Infinity;
+          let cornerSharpness = 0;
+          if (ringM.length > 3) {
+            const pcM = toLocalMeters(lat, lng, ringRefLat);
+            const pinch = narrowestWidthAtPoint(ringM, pcM.x, pcM.y);
+            if (Number.isFinite(pinch.minWidth) && pinch.minWidth < 300 && pinch.maxWidth > 0) {
+              const ratio = pinch.minWidth / pinch.maxWidth;
+              if (ratio < 0.55) pinchStrength = Math.min(1, (0.55 - ratio) / 0.25);
+            }
+            for (const cn of insideCorners) {
+              const d = Math.hypot(cn.x - pcM.x, cn.y - pcM.y);
+              if (d < nearestCornerM) { nearestCornerM = d; cornerSharpness = cn.sharpness; }
+            }
+          }
+
           let centerVectorScore = NaN;
           if (Number.isFinite(windToRad)) {
             const dx = lng - center.lng;
@@ -5177,7 +5291,10 @@
             centerVectorScore,
             edgeDensity: metrics.edgeDensity,
             areaType,
-            distanceFromUserM
+            distanceFromUserM,
+            pinchStrength,
+            nearestCornerM,
+            cornerSharpness
           }, settings);
 
           candidates.push({
@@ -5192,7 +5309,9 @@
             reasons: scored.reasons,
             distanceToBoundsM,
             distanceFromUserM,
-            distanceFromCenterM
+            distanceFromCenterM,
+            pinchStrength,
+            nearestCornerM
           });
         }
       });
