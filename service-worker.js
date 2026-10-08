@@ -1,8 +1,9 @@
-const CACHE_NAME = 'flw-hunt-cache-v4';
+const CACHE_NAME = 'flw-hunt-cache-v5';
 const CORE_ASSETS = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  './vendor/leaflet-rotate.js'
 ];
 
 self.addEventListener('install', (event) => {
