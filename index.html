@@ -2401,7 +2401,15 @@
             map.setBearing(-sim);
             diag += " bearingAfter:" + (typeof map.getBearing === "function" ? Math.round(map.getBearing()) : "n/a");
             diag += " paneTransform:" + (map._rotatePane && map._rotatePane.style ? String(map._rotatePane.style.transform).slice(0, 60) : "n/a");
-            showToast(diag, 9000);
+            try {
+              const rp = map._rotatePane;
+              const tilePane = map.getPane("tilePane");
+              const allTiles = document.querySelectorAll("img.leaflet-tile").length;
+              const rotTiles = rp ? rp.querySelectorAll("img.leaflet-tile").length : -1;
+              const tpUnder = tilePane && rp ? (function(){ let el = tilePane; while (el) { if (el === rp) return true; el = el.parentNode; } return false; })() : "n/a";
+              diag += " tiles:" + allTiles + "/" + rotTiles + " tpUnderRp:" + tpUnder + " rpInDom:" + (rp ? document.contains(rp) : "n/a");
+            } catch (e2) { diag += " domchkERR"; }
+            showToast(diag, 12000);
           } catch (err) {
             showToast("setBearing ERROR: " + (err && err.message), 9000);
           }
