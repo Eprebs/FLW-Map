@@ -416,6 +416,29 @@
       cursor: pointer;
     }
     #compassRose { transform-box: fill-box; transform-origin: center; }
+    .compass-cal-btn {
+      width: 56px;
+      margin: 2px auto 0;
+      padding: 4px 0;
+      font-size: 10px;
+    }
+    .cal-hint {
+      position: fixed;
+      top: 76px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(21,26,30,.94);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--blaze);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px;
+      z-index: 3000;
+      max-width: 86%;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
     #quickRefreshStatusBtn {
       background: linear-gradient(180deg, var(--blaze-strong), var(--blaze));
       color: #111111;
@@ -1351,6 +1374,8 @@
         </g>
       </svg>
     </div>
+    <button id="compassCalBtn" class="control-btn compass-cal-btn" style="display:none" title="Calibrate: point your phone at a landmark, tap Calibrate, then tap the landmark on the map">Calibrate</button>
+    <div id="calHint" class="cal-hint" style="display:none" role="status"></div>
     <button id="reportProblemBtn" class="control-btn">Report Problem</button>
   </div>
 
@@ -2307,6 +2332,67 @@
       handleDeviceOrientation(e);
     }
 
+    let compassOffset = 0; // calibration correction, degrees; reset each session
+    let calibrating = false;
+    let calHintTimer = null;
+
+    function bearingBetween(a, b) { // a,b are [lat,lng] -> degrees clockwise from north
+      const toRad = d => d * Math.PI / 180;
+      const dLon = toRad(b[1] - a[1]);
+      const y = Math.sin(dLon) * Math.cos(toRad(b[0]));
+      const x = Math.cos(toRad(a[0])) * Math.sin(toRad(b[0]))
+              - Math.sin(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.cos(dLon);
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+
+    function showCalHint(msg, ms) {
+      const h = document.getElementById("calHint");
+      if (!h) return;
+      h.textContent = msg;
+      h.style.display = "block";
+      if (calHintTimer) clearTimeout(calHintTimer);
+      if (ms) calHintTimer = setTimeout(() => { h.style.display = "none"; }, ms);
+    }
+
+    function hideCalHint() {
+      const h = document.getElementById("calHint");
+      if (h) h.style.display = "none";
+      if (calHintTimer) { clearTimeout(calHintTimer); calHintTimer = null; }
+    }
+
+    function applyCalibrationOffset(rawHeading) {
+      return (rawHeading + compassOffset + 360) % 360;
+    }
+
+    function startCalibration() {
+      if (!compassMode) return;
+      if (compassHeading === null || isNaN(compassHeading)) {
+        showCalHint("No compass signal yet — wait a moment and try again.", 3000);
+        return;
+      }
+      if (!currentPosition) {
+        // No GPS fix: assume the phone is currently pointing at true north.
+        compassOffset = (360 - compassHeading) % 360;
+        smoothHeading = null;
+        applyCompassBearing(compassHeading);
+        showCalHint("Calibrated to north. For landmark calibration, enable GPS.", 3500);
+        return;
+      }
+      calibrating = true;
+      showCalHint("Point your phone at a landmark, then tap that landmark on the map.");
+    }
+
+    function finishCalibration(latlng) {
+      calibrating = false;
+      hideCalHint();
+      if (compassHeading === null || !currentPosition) return;
+      const trueBearing = bearingBetween(currentPosition, [latlng.lat, latlng.lng]);
+      compassOffset = (trueBearing - compassHeading + 360) % 360;
+      smoothHeading = null; // re-converge smoothly onto the corrected heading
+      applyCompassBearing(compassHeading);
+      showCalHint("Compass calibrated.", 2500);
+    }
+
     function enableCompass() {
       if (typeof DeviceOrientationEvent === "undefined") return;
       disableCompass(); // clear any stale listeners before (re)subscribing
@@ -2352,9 +2438,10 @@
       if (rose) rose.style.transform = "rotate(" + lastBearingSet + "deg)";
     }
 
-    function applyCompassBearing(heading) {
-      if (!compassMode || typeof heading !== "number" || isNaN(heading)) return;
+    function applyCompassBearing(rawHeading) {
+      if (!compassMode || typeof rawHeading !== "number" || isNaN(rawHeading)) return;
       if (!map || typeof map.setBearing !== "function") return;
+      const heading = applyCalibrationOffset(rawHeading);
       if (smoothHeading === null) smoothHeading = heading;
       smoothHeading = (smoothHeading + shortestArcDeg(smoothHeading, heading) * 0.25 + 360) % 360;
       const target = -smoothHeading; // bearing rotates map clockwise; heading-up needs the opposite
@@ -2369,8 +2456,11 @@
       compassMode = on;
       const btn = document.getElementById("compassModeBtn");
       const widget = document.getElementById("compassWidget");
+      const calBtn = document.getElementById("compassCalBtn");
       if (btn) btn.classList.toggle("active", on);
       if (widget) widget.style.display = on ? "flex" : "none";
+      if (calBtn) calBtn.style.display = on ? "block" : "none";
+      if (!on) { calibrating = false; hideCalHint(); }
       if (on) {
         enableCompass(); // iOS 13+ requires the permission prompt inside this tap gesture
         smoothHeading = null;
@@ -2453,6 +2543,9 @@
     if (compassModeBtn) compassModeBtn.addEventListener("click", () => setCompassMode(!compassMode));
     const compassWidget = document.getElementById("compassWidget");
     if (compassWidget) compassWidget.addEventListener("click", () => setCompassMode(false));
+    const compassCalBtn = document.getElementById("compassCalBtn");
+    if (compassCalBtn) compassCalBtn.addEventListener("click", (ev) => { ev.stopPropagation(); startCalibration(); });
+    map.on("click", (e) => { if (calibrating && e && e.latlng) finishCalibration(e.latlng); });
 
     const gpsFollowBtn = document.getElementById("gpsFollowBtn");
     gpsFollowBtn.addEventListener("click", () => {
