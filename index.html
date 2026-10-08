@@ -2409,7 +2409,15 @@
               const tpUnder = tilePane && rp ? (function(){ let el = tilePane; while (el) { if (el === rp) return true; el = el.parentNode; } return false; })() : "n/a";
               diag += " tiles:" + allTiles + "/" + rotTiles + " tpUnderRp:" + tpUnder + " rpInDom:" + (rp ? document.contains(rp) : "n/a");
             } catch (e2) { diag += " domchkERR"; }
-            showToast(diag, 12000);
+            try {
+              const cs = getComputedStyle(map._rotatePane).transform;
+              diag += " computed:" + String(cs).slice(0, 80);
+              // Direct-write test: bypass plugin, force a plain 90deg rotate
+              map._rotatePane.style.transform = "translate3d(0px,0px,0px) rotate(90deg)";
+              const cs2 = getComputedStyle(map._rotatePane).transform;
+              diag += " | forced90 computed:" + String(cs2).slice(0, 80);
+            } catch (e3) { diag += " computedERR"; }
+            showToast(diag, 15000);
           } catch (err) {
             showToast("setBearing ERROR: " + (err && err.message), 9000);
           }
