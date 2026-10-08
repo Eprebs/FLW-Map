@@ -410,12 +410,36 @@
       display: none;
       align-items: center;
       justify-content: center;
-      width: 46px;
-      height: 46px;
+      flex-direction: column;
+      width: 56px;
       margin: 2px auto 0;
       cursor: pointer;
     }
     #compassRose { transform-box: fill-box; transform-origin: center; }
+    .compass-readout {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--blaze-strong);
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .huntao-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 90px;
+      transform: translateX(-50%);
+      background: rgba(21,26,30,.94);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--blaze);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px;
+      z-index: 3000;
+      max-width: 82%;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
 
     #quickRefreshStatusBtn {
       background: linear-gradient(180deg, var(--blaze-strong), var(--blaze));
@@ -1351,7 +1375,9 @@
           <text x="24" y="7.5" text-anchor="middle" font-size="7" fill="#ecf2f0" font-weight="bold">N</text>
         </g>
       </svg>
+      <div id="compassHeadingReadout" class="compass-readout">---&deg;</div>
     </div>
+    <div id="huntaoToast" class="huntao-toast" style="display:none" role="status"></div>
     <button id="reportProblemBtn" class="control-btn">Report Problem</button>
   </div>
 
@@ -2316,11 +2342,29 @@
       if (rose) rose.style.transform = "rotate(" + lastBearingSet + "deg)";
     }
 
+    let toastTimer = null;
+    function showToast(msg, ms) {
+      const t = document.getElementById("huntaoToast");
+      if (!t) return;
+      t.textContent = msg;
+      t.style.display = "block";
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { t.style.display = "none"; }, ms || 3500);
+    }
+
+    function updateHeadingReadout(heading) {
+      const ro = document.getElementById("compassHeadingReadout");
+      if (ro && typeof heading === "number" && !isNaN(heading)) {
+        ro.innerHTML = String(Math.round(((heading % 360) + 360) % 360)).padStart(3, "0") + "&deg;";
+      }
+    }
+
     function applyCompassBearing(heading) {
       if (!compassMode || typeof heading !== "number" || isNaN(heading)) return;
       if (!map || typeof map.setBearing !== "function") return;
       if (smoothHeading === null) smoothHeading = heading;
       smoothHeading = (smoothHeading + shortestArcDeg(smoothHeading, heading) * 0.25 + 360) % 360;
+      updateHeadingReadout(smoothHeading);
       const target = -smoothHeading; // bearing rotates map clockwise; heading-up needs the opposite
       if (Math.abs(shortestArcDeg(lastBearingSet, target)) >= 1) {
         lastBearingSet = target;
@@ -2341,7 +2385,23 @@
         if (currentPosition) {
           map.setView(currentPosition, Math.max(map.getZoom(), 15));
         }
-        if (compassHeading !== null) applyCompassBearing(compassHeading);
+        let sim = null;
+        try {
+          const v = new URLSearchParams(location.search).get("simheading");
+          if (v !== null && v !== "" && isFinite(Number(v))) sim = ((Number(v) % 360) + 360) % 360;
+        } catch (err) {}
+        if (sim !== null) {
+          compassHeading = sim;
+          updateHeadingReadout(sim);
+          applyCompassBearing(sim);
+        } else {
+          if (compassHeading !== null) applyCompassBearing(compassHeading);
+          setTimeout(() => {
+            if (compassMode && compassHeading === null) {
+              showToast("Waiting for compass signal — hold your phone flat and wave it in a figure-8 to calibrate.", 5000);
+            }
+          }, 3000);
+        }
       } else {
         try { if (map && typeof map.setBearing === "function") map.setBearing(0); } catch (err) {}
         lastBearingSet = 0;
