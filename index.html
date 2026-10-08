@@ -3625,7 +3625,7 @@
       let timeScore = 0.3;
       let timeNote = "";
       if (h >= 5 && h <= 8) { timeScore = 1.0; timeNote = "Peak dawn activity"; }
-      else if (h >= 15 && h <= 17) { timeScore = 0.95; timeNote = "Peak pre-rut activity"; }
+      else if (h >= 15 && h <= 17) { timeScore = 0.95; timeNote = "Peak evening activity"; }
       else if (h >= 17 && h <= 19) { timeScore = 0.85; timeNote = "Transition to evening activity"; }
       else if (h >= 19 && h <= 21) { timeScore = 0.7; timeNote = "Late evening movement"; }
       else if (h >= 21 && h <= 23) { timeScore = 0.4; timeNote = "Settling in for night"; }
@@ -3634,10 +3634,11 @@
 
       let seasonScore = 0.5;
       let seasonNote = "";
-      if (m === 11) { seasonScore = 1.0; seasonNote = "Peak pre-rut (excellent)"; }
-      else if (m === 10 || m === 12) { seasonScore = 0.95; seasonNote = "Rut in full swing"; }
-      else if ((m >= 8 && m <= 9) || m === 1) { seasonScore = 0.7; seasonNote = "Good hunting season"; }
-      else if (m >= 2 && m <= 7) { seasonScore = 0.3; seasonNote = "Off-season (very low activity)"; }
+      if (m === 11) { seasonScore = 1.0; seasonNote = "Peak rut (excellent)"; }
+      else if (m === 10) { seasonScore = 0.9; seasonNote = "Pre-rut (very good)"; }
+      else if (m === 12) { seasonScore = 0.75; seasonNote = "Post-rut, late season"; }
+      else if (m === 9 || m === 1) { seasonScore = 0.7; seasonNote = "Good hunting season"; }
+      else if (m >= 2 && m <= 8) { seasonScore = 0.3; seasonNote = "Off-season (very low activity)"; }
 
       let tempScore = 0.6;
       let tempNote = "";
@@ -3712,7 +3713,7 @@
         tempScore, tempNote, tempF: (lastWeatherData.temperature_2m * 9/5 + 32).toFixed(1),
         windScore, windNote, windSpeed: currentWind.speed,
         humidityScore, humidityNote, humidity,
-        pressureScore, pressureNote, pressureInHg: (lastWeatherData.pressure_msl / 3386.39)
+        pressureScore, pressureNote, pressureInHg: (lastWeatherData.pressure_msl / 33.8639)
       };
     }
 
@@ -5153,6 +5154,7 @@
           const distanceFromUserM = currentPosition
             ? map.distance([lat, lng], [currentPosition[0], currentPosition[1]])
             : NaN;
+          const distanceFromCenterM = map.distance([lat, lng], mapCenter);
 
           let centerVectorScore = NaN;
           if (Number.isFinite(windToRad)) {
@@ -5189,7 +5191,8 @@
             score: scored.total,
             reasons: scored.reasons,
             distanceToBoundsM,
-            distanceFromUserM
+            distanceFromUserM,
+            distanceFromCenterM
           });
         }
       });
@@ -5198,13 +5201,21 @@
       const selected = [];
       for (const candidate of candidates) {
         if (selected.length >= 3) break;
+        const sameArea = selected.some(s => s.areaName === candidate.areaName);
+        if (sameArea) continue;
         const tooClose = selected.some(s => map.distance([s.lat, s.lng], [candidate.lat, candidate.lng]) < 220);
         if (tooClose) continue;
         selected.push(candidate);
       }
 
-      if (!selected.length && candidates.length) {
-        selected.push(...candidates.slice(0, Math.min(3, candidates.length)));
+      if (selected.length < 3) {
+        for (const candidate of candidates) {
+          if (selected.length >= 3) break;
+          if (selected.includes(candidate)) continue;
+          const tooClose = selected.some(s => map.distance([s.lat, s.lng], [candidate.lat, candidate.lng]) < 220);
+          if (tooClose) continue;
+          selected.push(candidate);
+        }
       }
 
       return selected;
@@ -5300,7 +5311,9 @@
           const whyText = (Array.isArray(spot.reasons) ? spot.reasons.slice(0, 2) : []).join(" • ") || "Balanced terrain and pressure signals";
           const walkText = Number.isFinite(spot.distanceFromUserM)
             ? `${Math.round(spot.distanceFromUserM)}m from you`
-            : "distance unavailable";
+            : (Number.isFinite(spot.distanceFromCenterM)
+              ? `${Math.round(spot.distanceFromCenterM)}m from map center`
+              : "distance unavailable");
           return `
             <div class="ai-scout-card">
               <strong>${label}: ${spot.areaName}</strong>
@@ -5335,7 +5348,7 @@
       const tempF = (current.temperature_2m * 9/5 + 32).toFixed(1);
       const feelsLikeF = (current.apparent_temperature * 9/5 + 32).toFixed(1);
       const humidity = current.relative_humidity_2m;
-      const pressureInHg = (current.pressure_msl / 3386.39).toFixed(2);
+      const pressureInHg = (current.pressure_msl / 33.8639).toFixed(2);
       const windSpeed = current.wind_speed_10m;
       const windAngle = current.wind_direction_10m;
       const windDir = getWindDirection(windAngle);
