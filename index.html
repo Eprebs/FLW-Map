@@ -2393,6 +2393,18 @@
         if (sim !== null) {
           compassHeading = sim;
           updateHeadingReadout(sim);
+          try {
+            let diag = "setBearing:" + (typeof map.setBearing)
+              + " _rotate:" + (!!map._rotate)
+              + " _rotatePane:" + (!!map._rotatePane)
+              + " bearingBefore:" + (typeof map.getBearing === "function" ? Math.round(map.getBearing()) : "n/a");
+            map.setBearing(-sim);
+            diag += " bearingAfter:" + (typeof map.getBearing === "function" ? Math.round(map.getBearing()) : "n/a");
+            diag += " paneTransform:" + (map._rotatePane && map._rotatePane.style ? String(map._rotatePane.style.transform).slice(0, 60) : "n/a");
+            showToast(diag, 9000);
+          } catch (err) {
+            showToast("setBearing ERROR: " + (err && err.message), 9000);
+          }
           applyCompassBearing(sim);
         } else {
           if (compassHeading !== null) applyCompassBearing(compassHeading);
