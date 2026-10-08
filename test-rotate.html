@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rotate-test</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="vendor/leaflet-rotate.js"></script>
+<style>html,body,#map{height:100%;margin:0}</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+var map = L.map('map', {rotate:true, bearing:0, touchRotate:false}).setView([37.74,-92.12], 12);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'OSM'}).addTo(map);
+var b = new URLSearchParams(location.search).get('b');
+function diag(){
+  var rp = map._rotatePane;
+  return "setBearing:"+(typeof map.setBearing)+" rotate:"+!!map._rotate+" pane:"+(!!rp)+
+    " t:"+(rp&&rp.style?rp.style.transform.slice(0,70):"n/a");
+}
+if (b !== null) {
+  setTimeout(function(){
+    try { map.setBearing(Number(b)); } catch(e){ document.title="ERR:"+e.message; return; }
+    document.title = diag();
+  }, 2000);
+}
+</script>
+</body>
+</html>
