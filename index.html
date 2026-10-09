@@ -3202,9 +3202,10 @@
     }
 
     // Create wind direction arrow icon
-    function createWindArrowIcon() {
+    function createWindArrowIcon(windAngle) {
+      const angle = (typeof windAngle === "number" && isFinite(windAngle)) ? windAngle : (currentWind.angle || 0);
       return L.divIcon({
-        html: `<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${(currentWind.angle + 180) % 360}deg);">
+        html: `<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${(angle + 180) % 360}deg);">
           <path d="M 24 4 L 32 28 L 24 24 L 16 28 Z" fill="#c8ad3c" opacity="0.95" stroke="#111111" stroke-width="1"/>
         </svg>`,
         iconSize: [48, 48],
@@ -3212,6 +3213,35 @@
         popupAnchor: [0, -20],
         className: 'wind-arrow-icon'
       });
+    }
+
+    const WAYPOINT_WIND_STALE_MS = 30 * 60 * 1000;
+
+    // Fetch wind for a waypoint's exact location and update its arrow.
+    // Skips refetch when the stored reading is fresh; keeps the old arrow on failure.
+    async function refreshWaypointWind(record, force = false) {
+      if (!record || !isFinite(record.lat) || !isFinite(record.lng)) return;
+      const now = Date.now();
+      if (!force && record.windFetchedAt && (now - record.windFetchedAt) < WAYPOINT_WIND_STALE_MS) return;
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${record.lat}&longitude=${record.lng}&current=wind_speed_10m,wind_direction_10m&timezone=auto`;
+        const response = await fetch(url);
+        if (!response.ok) return;
+        const data = await response.json();
+        const w = data && data.current;
+        if (!w || !isFinite(w.wind_direction_10m)) return;
+        record.windAngle = w.wind_direction_10m;
+        record.windSpeed = w.wind_speed_10m;
+        record.windFetchedAt = now;
+        const visuals = waypointVisualsById.get(record.id);
+        if (visuals && visuals.windArrow) {
+          visuals.windArrow.setIcon(createWindArrowIcon(record.windAngle));
+        }
+        if (visuals && visuals.marker && visuals.marker.isPopupOpen()) {
+          visuals.marker.setPopupContent(buildWaypointPopup(record));
+        }
+        queueSyncSave();
+      } catch (e) { /* keep existing arrow when the fetch fails */ }
     }
 
     const addWaypointBtn = document.getElementById("addWaypointBtn");
@@ -3270,8 +3300,10 @@
     }
 
     function buildWaypointPopup(record) {
-      const windDir = getWindDirection(currentWind.angle || 0);
-      const windMph = ((currentWind.speed || 0) * 0.621371).toFixed(1);
+      const wAngle = (typeof record.windAngle === "number" && isFinite(record.windAngle)) ? record.windAngle : (currentWind.angle || 0);
+      const wSpeed = (typeof record.windSpeed === "number" && isFinite(record.windSpeed)) ? record.windSpeed : (currentWind.speed || 0);
+      const windDir = getWindDirection(wAngle);
+      const windMph = (wSpeed * 0.621371).toFixed(1);
       const typeLabel = waypointTypes[record.type]?.label || waypointTypes.generic.label;
       const displayName = escapeHtmlText(record.name || typeLabel);
       const safeId = escapeHtmlText(String(record.id || ""));
@@ -3465,7 +3497,7 @@
     function addWaypointRecord(record, openPopup = false) {
       const latlng = L.latLng(record.lat, record.lng);
       const marker = L.marker(latlng, { draggable: true, icon: createWaypointIcon(record.type) }).addTo(waypointLayer);
-      const windArrow = L.marker(latlng, { icon: createWindArrowIcon() }).addTo(waypointLayer);
+      const windArrow = L.marker(latlng, { icon: createWindArrowIcon(record.windAngle) }).addTo(waypointLayer);
 
       marker.bindPopup(buildWaypointPopup(record));
       if (openPopup) marker.openPopup();
@@ -3480,6 +3512,7 @@
         windArrow.setLatLng(next);
         marker.setPopupContent(buildWaypointPopup(record));
         queueSyncSave();
+        refreshWaypointWind(record, true); // moved: fetch wind for the new spot
       });
 
       marker.on("contextmenu", () => removeWaypointById(record.id));
@@ -3487,6 +3520,7 @@
       windArrow.on("click", () => marker.openPopup());
 
       waypointVisualsById.set(record.id, { marker, windArrow });
+      refreshWaypointWind(record); // async: per-spot wind for this waypoint
     }
 
     function renderAllWaypoints() {
@@ -5145,6 +5179,21 @@
           direction: current.wind_direction_10m,
           angle: current.wind_direction_10m
         };
+
+        // Keep waypoint arrows fresh: refetch stale per-spot winds, and move
+        // any arrows still on the old global reading to the new one.
+        try {
+          if (typeof waypointRecords !== "undefined" && typeof waypointVisualsById !== "undefined") {
+            waypointRecords.forEach(record => {
+              if (typeof record.windAngle === "number" && isFinite(record.windAngle)) {
+                refreshWaypointWind(record);
+              } else {
+                const visuals = waypointVisualsById.get(record.id);
+                if (visuals && visuals.windArrow) visuals.windArrow.setIcon(createWindArrowIcon());
+              }
+            });
+          }
+        } catch (e) { console.warn("Waypoint wind refresh failed:", e); }
         
         lastWeatherData = { ...current, fetchTime: new Date() };
         lastWeatherFetchAt = Date.now();
