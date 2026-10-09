@@ -2296,7 +2296,13 @@
       if (!gpsMarker || compassHeading === null) return;
       const el = gpsMarker.getElement();
       const svg = el ? el.querySelector(".gps-arrow-svg") : null;
-      if (svg) svg.style.transform = "rotate(" + compassHeading + "deg)";
+      if (svg) {
+        // The arrow lives in the non-rotated marker pane, so aim it at the
+        // calibrated heading relative to the map's current rotation:
+        // straight up in heading-up mode, compass direction when north-up.
+        const deg = (applyCalibrationOffset(compassHeading) + lastBearingSet + 360) % 360;
+        svg.style.transform = "rotate(" + deg + "deg)";
+      }
     }
 
     function handleDeviceOrientation(e) {
