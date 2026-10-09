@@ -2628,8 +2628,35 @@
     const profileNotes = document.getElementById("profileNotes");
 
     const AUTH_TOKEN_KEY = "huntao_auth_token";
+    const AUTH_USER_KEY = "huntao_auth_user";
     let authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
     let currentUser = null;
+    let needsAuthRevalidation = false;
+
+    function loadCachedUser() {
+      try {
+        const raw = localStorage.getItem(AUTH_USER_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch { return null; }
+    }
+
+    function saveCachedUser(user) {
+      try {
+        if (user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+        else localStorage.removeItem(AUTH_USER_KEY);
+      } catch {}
+    }
+
+    function clearAuthSession() {
+      authToken = "";
+      currentUser = null;
+      needsAuthRevalidation = false;
+      try {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(AUTH_USER_KEY);
+      } catch {}
+      liabilityAccepted = false;
+    }
     let syncSaveTimer = null;
     let liabilityAccepted = false;
 
@@ -2848,23 +2875,58 @@
         syncLiabilityGateForCurrentSession();
         return;
       }
+      // Optimistic restore: a cached user keeps the session alive offline
+      // so a failed validation call can't log the user out.
+      const cached = loadCachedUser();
+      if (cached) {
+        currentUser = cached;
+        liabilityAccepted = currentUser?.liabilityAcknowledged === true;
+        setAuthUi();
+        setSyncStatus("checking session...");
+        syncLiabilityGateForCurrentSession();
+      }
       try {
-        const data = await apiFetch("/api/auth/me", { method: "GET" });
+        const headers = { "Content-Type": "application/json" };
+        if (authToken) headers.Authorization = `Bearer ${authToken}`;
+        const response = await fetch("/api/auth/me", { method: "GET", headers });
+        if (response.status === 401) {
+          // Token invalid or expired: this is the only case that logs out.
+          clearAuthSession();
+          setAuthUi();
+          setSyncStatus("idle");
+          syncLiabilityGateForCurrentSession();
+          return;
+        }
+        if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+        const data = await response.json();
         currentUser = data.user;
+        saveCachedUser(data.user);
+        needsAuthRevalidation = false;
         liabilityAccepted = currentUser?.liabilityAcknowledged === true;
         setAuthUi();
         await loadCloudSync();
         syncLiabilityGateForCurrentSession();
-      } catch {
-        authToken = "";
-        currentUser = null;
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-        liabilityAccepted = false;
-        setAuthUi();
-        setSyncStatus("idle");
+      } catch (err) {
+        // Network or server error (not 401): keep the token and cached
+        // session. Revalidate silently when connectivity returns.
+        needsAuthRevalidation = true;
+        if (currentUser) {
+          setSyncStatus("offline — will sync when connected");
+        } else {
+          setAuthUi();
+          setSyncStatus("idle");
+        }
         syncLiabilityGateForCurrentSession();
       }
     }
+
+    // Revalidate a kept session when the device comes back online.
+    window.addEventListener("online", () => {
+      if (authToken && needsAuthRevalidation) {
+        needsAuthRevalidation = false;
+        initializeAuthFromToken();
+      }
+    });
 
     function prefillResetFromUrl() {
       const params = new URLSearchParams(window.location.search);
@@ -2920,6 +2982,7 @@
         liabilityAccepted = true;
         liabilityGate.style.display = "none";
         localStorage.setItem(AUTH_TOKEN_KEY, authToken);
+        saveCachedUser(currentUser);
         authEmailInput.value = email;
         authPasswordInput.value = "";
         setAuthUi();
@@ -2959,6 +3022,7 @@
         liabilityAccepted = true;
         liabilityGate.style.display = "none";
         localStorage.setItem(AUTH_TOKEN_KEY, authToken);
+        saveCachedUser(currentUser);
         setAuthUi();
         await loadCloudSync();
         closeLoginModal();
@@ -3002,9 +3066,7 @@
     });
 
     logoutBtn.addEventListener("click", () => {
-      authToken = "";
-      currentUser = null;
-      localStorage.removeItem(AUTH_TOKEN_KEY);
+      clearAuthSession();
       clearTimeout(syncSaveTimer);
       authEmailInput.value = "";
       authPasswordInput.value = "";
