@@ -3186,32 +3186,35 @@
     };
 
     // Create icon for a specific waypoint type
-    function createWaypointIcon(type) {
+    function createWaypointIcon(type, windAngle) {
       const typeData = waypointTypes[type] || waypointTypes['generic'];
-      return L.divIcon({
-        html: `<svg width="34" height="44" viewBox="0 0 34 44" xmlns="http://www.w3.org/2000/svg" aria-label="${typeData.label}">
-          <path d="M17 1C9.82 1 4 6.82 4 14c0 8.72 13 28 13 28s13-19.28 13-28C30 6.82 24.18 1 17 1z" fill="${typeData.pin}" stroke="#0f1418" stroke-width="1.6"/>
-          <circle cx="17" cy="18" r="8.5" fill="rgba(13,20,25,0.32)" stroke="rgba(236,242,240,0.22)" stroke-width="0.8"/>
-          ${typeData.svg}
-        </svg>`,
-        iconSize: [34, 44],
-        iconAnchor: [17, 44],
-        popupAnchor: [0, -44],
-        className: 'waypoint-marker'
-      });
-    }
-
-    // Create wind direction arrow icon
-    function createWindArrowIcon(windAngle) {
       const angle = (typeof windAngle === "number" && isFinite(windAngle)) ? windAngle : (currentWind.angle || 0);
+      const windDeg = (angle + 180) % 360;
       return L.divIcon({
-        html: `<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${(angle + 180) % 360}deg);">
-          <path d="M 24 4 L 32 28 L 24 24 L 16 28 Z" fill="#c8ad3c" opacity="0.95" stroke="#111111" stroke-width="1"/>
+        html: `<svg width="48" height="52" viewBox="0 0 48 52" xmlns="http://www.w3.org/2000/svg" aria-label="${typeData.label}">
+          <defs>
+            <linearGradient id="huntao-pin-shade" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+              <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+              <stop offset="1" stop-color="#000000" stop-opacity="0.38"/>
+            </linearGradient>
+            <filter id="huntao-pin-shadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.45"/>
+            </filter>
+          </defs>
+          <g transform="translate(7,4)" filter="url(#huntao-pin-shadow)">
+            <path d="M17 1C9.82 1 4 6.82 4 14c0 8.72 13 28 13 28s13-19.28 13-28C30 6.82 24.18 1 17 1z" fill="${typeData.pin}" stroke="#0b1114" stroke-width="1.4"/>
+            <path d="M17 1C9.82 1 4 6.82 4 14c0 8.72 13 28 13 28s13-19.28 13-28C30 6.82 24.18 1 17 1z" fill="url(#huntao-pin-shade)"/>
+          </g>
+          <circle cx="24" cy="18" r="17" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.3"/>
+          <g transform="rotate(${windDeg} 24 18)">
+            <path d="M24 0.2 L27.2 6.5 L20.8 6.5 Z" fill="#e8c84a" stroke="#0b1114" stroke-width="0.6"/>
+          </g>
         </svg>`,
-        iconSize: [48, 48],
-        iconAnchor: [24, 24],
-        popupAnchor: [0, -20],
-        className: 'wind-arrow-icon'
+        iconSize: [48, 52],
+        iconAnchor: [24, 48],
+        popupAnchor: [0, -48],
+        className: 'waypoint-marker'
       });
     }
 
@@ -3234,8 +3237,8 @@
         record.windSpeed = w.wind_speed_10m;
         record.windFetchedAt = now;
         const visuals = waypointVisualsById.get(record.id);
-        if (visuals && visuals.windArrow) {
-          visuals.windArrow.setIcon(createWindArrowIcon(record.windAngle));
+        if (visuals && visuals.marker) {
+          visuals.marker.setIcon(createWaypointIcon(record.type, record.windAngle));
         }
         if (visuals && visuals.marker && visuals.marker.isPopupOpen()) {
           visuals.marker.setPopupContent(buildWaypointPopup(record));
@@ -3487,7 +3490,6 @@
       const visuals = waypointVisualsById.get(id);
       if (visuals) {
         if (visuals.marker) waypointLayer.removeLayer(visuals.marker);
-        if (visuals.windArrow) waypointLayer.removeLayer(visuals.windArrow);
         waypointVisualsById.delete(id);
       }
       waypointRecords = waypointRecords.filter(wp => wp.id !== id);
@@ -3496,30 +3498,25 @@
 
     function addWaypointRecord(record, openPopup = false) {
       const latlng = L.latLng(record.lat, record.lng);
-      const marker = L.marker(latlng, { draggable: true, icon: createWaypointIcon(record.type) }).addTo(waypointLayer);
-      const windArrow = L.marker(latlng, { icon: createWindArrowIcon(record.windAngle) }).addTo(waypointLayer);
+      const marker = L.marker(latlng, { draggable: true, icon: createWaypointIcon(record.type, record.windAngle) }).addTo(waypointLayer);
 
       marker.bindPopup(buildWaypointPopup(record));
       if (openPopup) marker.openPopup();
       marker.wayPointType = record.type;
       marker.customName = record.name || "";
-      marker.windArrow = windArrow;
 
       marker.on("dragend", () => {
         const next = marker.getLatLng();
         record.lat = next.lat;
         record.lng = next.lng;
-        windArrow.setLatLng(next);
         marker.setPopupContent(buildWaypointPopup(record));
         queueSyncSave();
         refreshWaypointWind(record, true); // moved: fetch wind for the new spot
       });
 
       marker.on("contextmenu", () => removeWaypointById(record.id));
-      windArrow.on("contextmenu", () => removeWaypointById(record.id));
-      windArrow.on("click", () => marker.openPopup());
 
-      waypointVisualsById.set(record.id, { marker, windArrow });
+      waypointVisualsById.set(record.id, { marker });
       refreshWaypointWind(record); // async: per-spot wind for this waypoint
     }
 
@@ -5189,7 +5186,7 @@
                 refreshWaypointWind(record);
               } else {
                 const visuals = waypointVisualsById.get(record.id);
-                if (visuals && visuals.windArrow) visuals.windArrow.setIcon(createWindArrowIcon());
+                if (visuals && visuals.marker) visuals.marker.setIcon(createWaypointIcon(record.type));
               }
             });
           }
