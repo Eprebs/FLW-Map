@@ -4186,6 +4186,7 @@
     let flwAreasLayer = null;
     let archeryLayerGroup = null;
     let cantonmentLayerGroup = null;
+    let offLimitsLayerGroup = null;
     let areaLabelLayerGroup = null;
     let renderedBaseId = null;
     let lastAutoFitBaseId = null;
@@ -4478,6 +4479,7 @@
         if (flwAreasLayer) { map.removeLayer(flwAreasLayer); flwAreasLayer = null; }
         if (archeryLayerGroup) { map.removeLayer(archeryLayerGroup); archeryLayerGroup = null; }
         if (cantonmentLayerGroup) { map.removeLayer(cantonmentLayerGroup); cantonmentLayerGroup = null; }
+        if (offLimitsLayerGroup) { map.removeLayer(offLimitsLayerGroup); offLimitsLayerGroup = null; }
         if (areaLabelLayerGroup) { map.removeLayer(areaLabelLayerGroup); areaLabelLayerGroup = null; }
         if (aiScoutSuggestionLayer) { map.removeLayer(aiScoutSuggestionLayer); aiScoutSuggestionLayer = null; }
 
@@ -4517,6 +4519,17 @@
           canDots.addShape(dot);
           canDots.addTo(map);
         }
+
+        const offLimitsHatch = hasPatternPlugin
+          ? new L.StripePattern({
+              weight: 4,
+              spaceWeight: 7,
+              color: "#ef4444",
+              opacity: 0.70,
+              angle: -45
+            })
+          : null;
+        if (offLimitsHatch) offLimitsHatch.addTo(map);
 
         let currentAreaOpacity = 0.35;
         const signInButtonHtml = buildSignInButtonHtml();
@@ -4635,6 +4648,12 @@
             });
           }
 
+          if (offLimitsLayerGroup) {
+            offLimitsLayerGroup.eachLayer(layer => {
+              layer.setStyle({ fillOpacity: currentAreaOpacity, opacity: currentAreaOpacity });
+            });
+          }
+
           // Keep labels subtle and readable by showing them only at useful zooms.
           if (areaLabelLayerGroup) {
             if (zoom >= 11) {
@@ -4661,6 +4680,7 @@
         // Pattern overlays for Archery + CAN
         const archeryPolys = [];
         const cantonmentPolys = [];
+        const offLimitsPolys = [];
         const areaLabels = [];
 
         flwAreasLayer.eachLayer(layer => {
@@ -4674,10 +4694,13 @@
           const typeRaw = f?.properties?.area_type || "";
           const typeText = String(typeRaw).trim();
           const typeLower = typeText.toLowerCase();
-          const displayType = (typeLower.includes("archery") || typeLower.includes("can") || typeLower.includes("cantonment"))
+          const isOffLimits = typeLower.includes("off_limit");
+          const displayType = isOffLimits
+            ? "OFF LIMITS"
+            : (typeLower.includes("archery") || typeLower.includes("can") || typeLower.includes("cantonment"))
             ? typeText
             : "HA";
-          const openText = status ? (status.Open ? "OPEN" : "CLOSED") : "UNKNOWN";
+          const openText = isOffLimits ? "NO HUNTING" : (status ? (status.Open ? "OPEN" : "CLOSED") : "UNKNOWN");
           const unavailableNote = status
             ? ""
             : `<span style="color: #fbbf24; font-size: 11px;">Status unavailable from source feed.</span><br>`;
@@ -4721,6 +4744,22 @@
             cantonmentPolys.push(poly);
           }
 
+          if (t === "off_limits" || t.includes("off_limit")) {
+            const poly = L.polygon(layer.getLatLngs(), {
+              color: "#ef4444",
+              weight: 2,
+              fillOpacity: currentAreaOpacity,
+              fillPattern: offLimitsHatch || undefined,
+              fillColor: offLimitsHatch ? undefined : "#ef4444"
+            });
+            if (typeof layer.bindToolInteractions === "function") {
+              layer.bindToolInteractions(poly);
+            }
+            poly.on("mouseover", () => poly.setStyle({ weight: 3, color: "#fca5a5" }));
+            poly.on("mouseout", () => poly.setStyle({ weight: 2, color: "#ef4444" }));
+            offLimitsPolys.push(poly);
+          }
+
           const labelName = String(f?.properties?.area_name || "").trim();
           if (labelName) {
             const center = layer.getBounds().getCenter();
@@ -4739,6 +4778,7 @@
 
         if (archeryPolys.length) archeryLayerGroup = L.layerGroup(archeryPolys).addTo(map);
         if (cantonmentPolys.length) cantonmentLayerGroup = L.layerGroup(cantonmentPolys).addTo(map);
+        if (offLimitsPolys.length) offLimitsLayerGroup = L.layerGroup(offLimitsPolys).addTo(map);
         if (areaLabels.length) areaLabelLayerGroup = L.layerGroup(areaLabels).addTo(map);
 
         updateAreaOpacity();
