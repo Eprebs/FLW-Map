@@ -5983,5 +5983,59 @@
       });
     }
   </script>
+  <script>
+    // Anonymous visit counting (first-party only, no third-party analytics).
+    // Sends a random on-device visitor ID and the selected installation so
+    // hunt-ao.com/admin can show visit and unique-visitor stats.
+    (function () {
+      try {
+        var VISITOR_KEY = "huntao_visitor_id";
+        var visitorId = "";
+        try {
+          visitorId = window.localStorage.getItem(VISITOR_KEY) || "";
+          if (!visitorId) {
+            visitorId = (window.crypto && crypto.randomUUID)
+              ? crypto.randomUUID()
+              : "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 14);
+            window.localStorage.setItem(VISITOR_KEY, visitorId);
+          }
+        } catch (storageErr) {
+          visitorId = "";
+        }
+
+        function currentBase() {
+          var select = document.getElementById("baseSelect");
+          if (select && select.value) return select.value;
+          return "fort_leonard_wood";
+        }
+
+        function ping(type) {
+          var payload = JSON.stringify({
+            visitorId: visitorId,
+            installation: currentBase(),
+            type: type
+          });
+          try {
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon("/api/stats/visit", new Blob([payload], { type: "application/json" }));
+              return;
+            }
+          } catch (beaconErr) { /* fall through to fetch */ }
+          fetch("/api/stats/visit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true
+          }).catch(function () {});
+        }
+
+        ping("load");
+        var baseSelectEl = document.getElementById("baseSelect");
+        if (baseSelectEl) {
+          baseSelectEl.addEventListener("change", function () { ping("switch"); });
+        }
+      } catch (err) { /* Stats are optional; never break the app. */ }
+    })();
+  </script>
 </body>
 </html>
