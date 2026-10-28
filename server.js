@@ -410,6 +410,142 @@ function escapeCsv(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+// ---- Anonymous visit stats ----
+// First-party counting only: no third-party analytics, no cookies, nothing
+// tied to an account. Each browser keeps a random visitor ID in localStorage
+// and the server stores tallies in the same data file as the user store.
+const STATS_TIME_ZONE = "America/Chicago";
+const STATS_DAY_RETENTION = 90;
+const BOT_UA_PATTERN = /(bot|crawler|spider|crawling|preview|headless|pingdom|uptimerobot|curl|wget|python-requests|axios|node-fetch)/i;
+
+const INSTALLATION_LABELS = {
+  fort_leonard_wood: "Fort Leonard Wood",
+  imported_installation: "Fort Stewart",
+  fort_belvoir: "Fort Belvoir",
+  asis: "Fort Bragg",
+  fort_wainwright: "Fort Wainwright",
+  fort_riley: "Fort Riley",
+  jblm: "JBLM",
+  fort_drum: "Fort Drum",
+  other: "Other / unknown"
+};
+
+function statsDayKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: STATS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(date);
+}
+
+function statsDayKeyDaysAgo(daysAgo) {
+  return statsDayKey(new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000));
+}
+
+function ensureStats(store) {
+  if (!store.stats || typeof store.stats !== "object") {
+    store.stats = { totalVisits: 0, seenVisitors: {}, days: {}, installsAllTime: {} };
+  }
+  if (typeof store.stats.totalVisits !== "number") store.stats.totalVisits = 0;
+  if (!store.stats.seenVisitors || typeof store.stats.seenVisitors !== "object") store.stats.seenVisitors = {};
+  if (!store.stats.days || typeof store.stats.days !== "object") store.stats.days = {};
+  if (!store.stats.installsAllTime || typeof store.stats.installsAllTime !== "object") store.stats.installsAllTime = {};
+  return store.stats;
+}
+
+function recordVisit(store, { visitorId, installation, userAgent, isLoad }) {
+  if (BOT_UA_PATTERN.test(String(userAgent || ""))) return false;
+  const stats = ensureStats(store);
+  const day = statsDayKey();
+  if (!stats.days[day]) stats.days[day] = { visits: 0, visitors: {}, installs: {} };
+  const bucket = stats.days[day];
+
+  if (isLoad) {
+    bucket.visits += 1;
+    stats.totalVisits += 1;
+  }
+  if (visitorId) {
+    bucket.visitors[visitorId] = 1;
+    if (!stats.seenVisitors[visitorId]) stats.seenVisitors[visitorId] = day;
+  }
+  const baseKey = Object.prototype.hasOwnProperty.call(ISPORTSMAN_BASES, installation) ? installation : "other";
+  bucket.installs[baseKey] = (bucket.installs[baseKey] || 0) + 1;
+  stats.installsAllTime[baseKey] = (stats.installsAllTime[baseKey] || 0) + 1;
+
+  // Prune old daily buckets so the data file stays lean.
+  const dayKeys = Object.keys(stats.days).sort();
+  while (dayKeys.length > STATS_DAY_RETENTION) {
+    delete stats.days[dayKeys.shift()];
+  }
+  return true;
+}
+
+function buildStatsOverviewHtml(store) {
+  const stats = store?.stats;
+  const users = Array.isArray(store?.users) ? store.users : [];
+  if (!stats || !stats.days) {
+    return `<h2>Visit Stats</h2><p class="muted">No visits recorded yet. Counting starts with the first visit after this update.</p>`;
+  }
+  const dayKeys = Object.keys(stats.days).sort();
+  const todayKey = statsDayKey();
+
+  function summarize(fromKey) {
+    let visits = 0;
+    const visitors = new Set();
+    const installs = {};
+    dayKeys.forEach(key => {
+      if (fromKey && key < fromKey) return;
+      const bucket = stats.days[key] || {};
+      visits += bucket.visits || 0;
+      Object.keys(bucket.visitors || {}).forEach(id => visitors.add(id));
+      Object.entries(bucket.installs || {}).forEach(([id, n]) => {
+        installs[id] = (installs[id] || 0) + n;
+      });
+    });
+    return { visits, uniques: visitors.size, installs };
+  }
+
+  const today = summarize(todayKey);
+  const last7 = summarize(statsDayKeyDaysAgo(6));
+  const last30 = summarize(statsDayKeyDaysAgo(29));
+  const allTimeUniques = Object.keys(stats.seenVisitors || {}).length;
+  const newToday = Object.values(stats.seenVisitors || {}).filter(d => d === todayKey).length;
+  const registeredPct = allTimeUniques ? Math.round((users.length / allTimeUniques) * 100) : 0;
+  const installRows = Object.entries(stats.installsAllTime || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, n]) => `<tr><td>${escapeHtml(INSTALLATION_LABELS[id] || id)}</td><td>${n}</td><td>${last30.installs[id] || 0}</td></tr>`)
+    .join("");
+
+  return `
+  <h2>Visit Stats <span class="muted" style="font-size:13px">(anonymous, since ${escapeHtml(dayKeys[0] || todayKey)}, Central time)</span></h2>
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr><th>Window</th><th>Visits</th><th>Unique Visitors</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Today</td><td>${today.visits}</td><td>${today.uniques}</td></tr>
+        <tr><td>Last 7 days</td><td>${last7.visits}</td><td>${last7.uniques}</td></tr>
+        <tr><td>Last 30 days</td><td>${last30.visits}</td><td>${last30.uniques}</td></tr>
+        <tr><td>All time</td><td>${stats.totalVisits || 0}</td><td>${allTimeUniques}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">New visitors today: ${newToday} &bull; Registered accounts: ${users.length} (${registeredPct}% of unique visitors)</p>
+  <h3>Installation Views</h3>
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr><th>Installation</th><th>All Time</th><th>Last 30 Days</th></tr>
+      </thead>
+      <tbody>
+        ${installRows || '<tr><td class="empty" colspan="3">No installation views yet.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
 function buildUsersCsv(users = []) {
   const header = [
     "user_id",
@@ -485,6 +621,7 @@ function buildUsersOverviewHtml(store) {
 <body>
   <h1>HuntAO Admin Users Overview</h1>
   <div class="muted">Generated: ${escapeHtml(new Date().toISOString())} • Total users: ${users.length}</div>
+  ${buildStatsOverviewHtml(store)}
   <div class="filters">
     <label for="liabilityFilter"><strong>Acknowledged:</strong></label>
     <select id="liabilityFilter">
@@ -760,6 +897,36 @@ const server = http.createServer(async (req, res) => {
     });
     res.end();
     return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/stats/visit") {
+    try {
+      const ip = getClientIp(req);
+      const limiter = consumeRateLimit(`stats:${ip}`, 180, AUTH_RATE_LIMIT_WINDOW_MS);
+      if (limiter.blocked) {
+        sendJson(res, 429, { error: "Too many requests." });
+        return;
+      }
+      const body = await parseBody(req);
+      const rawVisitorId = String(body.visitorId || "").trim();
+      const visitorId = /^[A-Za-z0-9_-]{8,64}$/.test(rawVisitorId) ? rawVisitorId : "";
+      const installation = String(body.installation || "").trim().toLowerCase();
+      const isLoad = String(body.type || "load") !== "switch";
+      const store = readDataStore();
+      recordVisit(store, {
+        visitorId,
+        installation,
+        userAgent: req.headers["user-agent"],
+        isLoad
+      });
+      writeDataStore(store);
+      res.writeHead(204, { "Cache-Control": "no-store" });
+      res.end();
+      return;
+    } catch {
+      sendJson(res, 400, { error: "Invalid stats payload." });
+      return;
+    }
   }
 
   if (req.method === "POST" && pathname === "/api/auth/signup") {
