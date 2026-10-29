@@ -28,7 +28,7 @@ const EMAIL_OUTBOX_FILE = path.join(DATA_DIR, "email-outbox.log");
 const AUTH_RATE_LIMIT_MAX = Number(process.env.AUTH_RATE_LIMIT_MAX || 25);
 const AUTH_RATE_LIMIT_WINDOW_MS = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const RESET_DATA_ON_BOOT = String(process.env.RESET_DATA_ON_BOOT || "false").toLowerCase() === "true";
-const ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION = String(process.env.ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION || "true").toLowerCase() === "true";
+const ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION = String(process.env.ALLOW_ADMIN_QUERY_KEY_IN_PRODUCTION || "false").toLowerCase() === "true";
 
 // Installation-specific iSportsman origins.
 // Override these with environment variables as more bases are added.
@@ -77,24 +77,80 @@ function ensureDataStore() {
   }
 }
 
+const DATA_BACKUP_DIR = path.join(DATA_DIR, "backups");
+const DATA_BACKUP_KEEP = 14;
+const DATA_BACKUP_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let lastBackupAtMs = 0;
+
+function parseDataStore(raw) {
+  const parsed = JSON.parse(raw);
+  if (!parsed.users || !parsed.syncByUserId) return null;
+  parsed.users.forEach(normalizeUserRecord);
+  return parsed;
+}
+
+function listBackupFiles() {
+  try {
+    return fs
+      .readdirSync(DATA_BACKUP_DIR)
+      .filter(name => /^app-data-\d{4}-.*\.json$/.test(name))
+      .sort()
+      .map(name => path.join(DATA_BACKUP_DIR, name));
+  } catch {
+    return [];
+  }
+}
+
 function readDataStore() {
   ensureDataStore();
   try {
-    const raw = fs.readFileSync(DATA_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed.users || !parsed.syncByUserId) {
-      return { users: [], syncByUserId: {} };
-    }
-    parsed.users.forEach(normalizeUserRecord);
-    return parsed;
+    const parsed = parseDataStore(fs.readFileSync(DATA_FILE, "utf8"));
+    if (parsed) return parsed;
   } catch {
-    return { users: [], syncByUserId: {} };
+    // Fall through: a corrupt or torn main file must not silently wipe the
+    // store, so try the backups before giving up.
+  }
+  const backups = listBackupFiles().reverse();
+  for (const backupPath of backups) {
+    try {
+      const parsed = parseDataStore(fs.readFileSync(backupPath, "utf8"));
+      if (parsed) {
+        console.error(`Recovered data store from backup: ${backupPath}`);
+        return parsed;
+      }
+    } catch {
+      // Try the next-oldest backup.
+    }
+  }
+  return { users: [], syncByUserId: {} };
+}
+
+function maybeBackupDataStore(serialized) {
+  const now = Date.now();
+  if (now - lastBackupAtMs < DATA_BACKUP_MIN_INTERVAL_MS && listBackupFiles().length > 0) return;
+  try {
+    fs.mkdirSync(DATA_BACKUP_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    fs.writeFileSync(path.join(DATA_BACKUP_DIR, `app-data-${stamp}.json`), serialized, "utf8");
+    lastBackupAtMs = now;
+    const backups = listBackupFiles();
+    while (backups.length > DATA_BACKUP_KEEP) {
+      fs.unlinkSync(backups.shift());
+    }
+  } catch (err) {
+    console.error("Data store backup failed:", err);
   }
 }
 
 function writeDataStore(data) {
   ensureDataStore();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
+  const serialized = JSON.stringify(data, null, 2);
+  // Atomic write: write a temp file, then rename it over the live file, so
+  // a crash mid-write can never tear the only copy of the data.
+  const tmpFile = `${DATA_FILE}.tmp`;
+  fs.writeFileSync(tmpFile, serialized, "utf8");
+  fs.renameSync(tmpFile, DATA_FILE);
+  maybeBackupDataStore(serialized);
 }
 
 function resetDataStore() {
@@ -731,19 +787,44 @@ function buildAdminLauncherHtml() {
         return '';
       }
       localStorage.setItem('huntao_admin_key', value);
-      return encodeURIComponent(value);
+      return value;
     }
 
-    document.getElementById('openOverview').addEventListener('click', () => {
+    // The key goes in a request header, never in the page address, so it
+    // stays out of browser history and server logs.
+    async function fetchAdmin(path) {
       const key = getKey();
-      if (!key) return;
-      window.open('/api/admin/users-overview?key=' + key, '_blank');
+      if (!key) return null;
+      const response = await fetch(path, { headers: { 'x-admin-key': key } });
+      if (!response.ok) {
+        alert('Admin request failed (' + response.status + '). Check the key and try again.');
+        return null;
+      }
+      return response;
+    }
+
+    document.getElementById('openOverview').addEventListener('click', async () => {
+      const response = await fetchAdmin('/api/admin/users-overview');
+      if (!response) return;
+      const html = await response.text();
+      document.open();
+      document.write(html);
+      document.close();
     });
 
-    document.getElementById('downloadCsv').addEventListener('click', () => {
-      const key = getKey();
-      if (!key) return;
-      window.location.href = '/api/admin/users.csv?key=' + key;
+    document.getElementById('downloadCsv').addEventListener('click', async () => {
+      const response = await fetchAdmin('/api/admin/users.csv');
+      if (!response) return;
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = match ? match[1] : 'users.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
     });
   </script>
 </body>
