@@ -32,7 +32,8 @@ const SHELL_ASSETS = [
   "./icon-192.png",
   "./icon-512.png",
   "./apple-touch-icon.png",
-  "./flw_areas.backup.geojson"
+  "./flw_areas.backup.geojson",
+  "./flw_fishing_waters.geojson"
 ];
 
 const TILE_HOST_RE = /(^|\.)(arcgisonline\.com|nationalmap\.gov|openstreetmap\.org|opentopomap\.org)$/;
