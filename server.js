@@ -1748,10 +1748,10 @@ const server = http.createServer(async (req, res) => {
   // API: Proxy iSportsman area status (normalized format)
   // ----------------------------------------------------
   if (req.method === "GET" && pathname === "/api/areas") {
+    const requestedBaseId = String(url.searchParams.get("base") || "fort_leonard_wood").trim().toLowerCase();
+    const requestedDate = normalizeStatusDate(url.searchParams.get("date"));
+    const ISPORTSMAN_BASE = getISportsmanBase(requestedBaseId);
     try {
-      const requestedBaseId = String(url.searchParams.get("base") || "fort_leonard_wood").trim().toLowerCase();
-      const requestedDate = normalizeStatusDate(url.searchParams.get("date"));
-      const ISPORTSMAN_BASE = getISportsmanBase(requestedBaseId);
 
       const payload = {
         activity: "",
@@ -1765,19 +1765,30 @@ const server = http.createServer(async (req, res) => {
 
       const apiUrl = `${ISPORTSMAN_BASE}/api/area/query?cacheBuster=${Date.now()}`;
 
-      const r = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json, text/plain, */*",
-          "Origin": ISPORTSMAN_BASE,
-          "Referer": `${ISPORTSMAN_BASE}/areas.aspx`,
-          "User-Agent": "Mozilla/5.0"
-        },
-        body: JSON.stringify(payload)
-      });
+      // Bound the upstream wait: iSportsman sometimes hangs with no reply,
+      // and a stuck status call should fail promptly so clients can fall
+      // back gracefully instead of spinning.
+      const upstreamController = new AbortController();
+      const upstreamTimer = setTimeout(() => upstreamController.abort(), 10000);
+      let text;
+      try {
+        const r = await fetch(apiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": ISPORTSMAN_BASE,
+            "Referer": `${ISPORTSMAN_BASE}/areas.aspx`,
+            "User-Agent": "Mozilla/5.0"
+          },
+          body: JSON.stringify(payload),
+          signal: upstreamController.signal
+        });
 
-      const text = await r.text();
+        text = await r.text();
+      } finally {
+        clearTimeout(upstreamTimer);
+      }
 
       let parsed;
       try {
@@ -1804,14 +1815,37 @@ const server = http.createServer(async (req, res) => {
         meta: {
           sourceHost: new URL(ISPORTSMAN_BASE).host,
           requestedDate,
-          fetchedAt: new Date().toISOString()
+          fetchedAt: new Date().toISOString(),
+          upstreamOk: Boolean(parsed && Array.isArray(parsed.data))
         }
       };
       res.end(JSON.stringify(response));
     } catch (err) {
       console.error("Proxy error:", err);
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: String(err) }));
+      // Upstream unreachable, timed out, or unparseable: return the normal
+      // envelope with an empty data set + upstreamOk:false (instead of a
+      // hard 500) so clients can tell "source is down" from "no areas"
+      // and use their on-device last known status.
+      try {
+        res.writeHead(200, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Access-Control-Allow-Origin": CORS_ORIGIN,
+          "Access-Control-Allow-Headers": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+        });
+        res.end(JSON.stringify({
+          data: [],
+          meta: {
+            sourceHost: new URL(ISPORTSMAN_BASE).host,
+            requestedDate,
+            fetchedAt: new Date().toISOString(),
+            upstreamOk: false
+          }
+        }));
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: String(err) }));
+      }
     }
     return;
   }
