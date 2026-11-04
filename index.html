@@ -1149,6 +1149,34 @@
       background-color: transparent;
     }
 
+    .legend-swatch.fish {
+      background-color: #16a34a;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .legend-swatch.fish svg {
+      width: 10px;
+      height: 10px;
+      display: block;
+    }
+
+    /* Fish glyph centered on fishing water pins (wide zooms only).
+       Non-interactive so pin taps pass through to the circle marker. */
+    .fishing-fish-icon {
+      background: transparent;
+      border: none;
+      pointer-events: none;
+    }
+
+    .fishing-fish-icon svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
     .area-overlay-label {
       background: rgba(15, 21, 26, 0.42);
       border: 1px solid rgba(140, 158, 172, 0.28);
@@ -1629,6 +1657,10 @@
     <div class="legend-item">
       <div class="legend-swatch dots"></div>
       <span>Cantonment</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch fish"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#ffffff" fill-rule="evenodd" d="M4 50 C18 26 38 14 56 14 C70 14 80 22 87 31 L97 16 L97 84 L87 69 C80 78 70 86 56 86 C38 86 18 74 4 50 Z M25 42 a5 5 0 1 0 10 0 a5 5 0 1 0 -10 0 Z"/></svg></div>
+      <span>Fishing water</span>
     </div>
   </div>
 
@@ -4164,6 +4196,7 @@
     let latestStatusIsStale = false;
     let latestStatusSavedAt = null;
     let fishingPinsLayerGroup = null;
+    let fishingFishLayerGroup = null;
     let fishingWatersFeaturesCache = null;
 
     function setMapLoadBanner(message, tone = "info", autoHideMs = 0) {
@@ -4575,6 +4608,26 @@
       return html;
     }
 
+    // Fish glyph shown on fishing pins at wide zooms (the installation
+    // overview, where a pin covers the whole pond and reads as a big
+    // dot) so the pins identify as fishing waters at a glance. It hides
+    // when zoomed in close, where the water body itself fills the view
+    // and the pin is just a small point on it. Tune via this constant.
+    const FISH_ICON_MAX_ZOOM = 14;
+    const FISH_ICON_SVG =
+      `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      `<path fill="#ffffff" fill-rule="evenodd" d="M4 50 C18 26 38 14 56 14 C70 14 80 22 87 31 L97 16 L97 84 L87 69 C80 78 70 86 56 86 C38 86 18 74 4 50 Z M25 42 a5 5 0 1 0 10 0 a5 5 0 1 0 -10 0 Z"/></svg>`;
+
+    function updateFishingFishIconVisibility() {
+      if (!fishingFishLayerGroup) return;
+      const show = map.getZoom() <= FISH_ICON_MAX_ZOOM;
+      if (show && !map.hasLayer(fishingFishLayerGroup)) {
+        fishingFishLayerGroup.addTo(map);
+      } else if (!show && map.hasLayer(fishingFishLayerGroup)) {
+        map.removeLayer(fishingFishLayerGroup);
+      }
+    }
+
     async function ensureFishingWatersFeatures() {
       if (fishingWatersFeaturesCache) return fishingWatersFeaturesCache;
       try {
@@ -4593,6 +4646,11 @@
       fishingPinsLayerGroup = null;
       if (old) {
         try { map.removeLayer(old); } catch (e) { /* already gone */ }
+      }
+      const oldFish = fishingFishLayerGroup;
+      fishingFishLayerGroup = null;
+      if (oldFish) {
+        try { map.removeLayer(oldFish); } catch (e) { /* already gone */ }
       }
     }
 
@@ -4614,6 +4672,7 @@
         if (!features.length) return;
 
         fishingPinsLayerGroup = L.layerGroup();
+        fishingFishLayerGroup = L.layerGroup();
         for (const f of features) {
           const coords = f?.geometry?.coordinates;
           if (!Array.isArray(coords) || coords.length < 2) continue;
@@ -4624,7 +4683,23 @@
           const marker = L.circleMarker([lat, lng], fishingPinStyleFor(fishRow));
           marker.bindPopup(buildFishingPinPopupHtml(f, latestStatusIndex, latestStatusIsStale));
           fishingPinsLayerGroup.addLayer(marker);
+          // White fish glyph centered on the pin. Non-interactive so
+          // taps pass through to the circle marker and its popup.
+          const fishMarker = L.marker([lat, lng], {
+            icon: L.divIcon({
+              className: "fishing-fish-icon",
+              html: FISH_ICON_SVG,
+              iconSize: [12, 12],
+              iconAnchor: [6, 6]
+            }),
+            interactive: false,
+            keyboard: false
+          });
+          fishingFishLayerGroup.addLayer(fishMarker);
         }
+        // Fish visibility first: it must not depend on the pins add
+        // succeeding (a renderer hiccup should never hide the glyphs).
+        updateFishingFishIconVisibility();
         fishingPinsLayerGroup.addTo(map);
       } catch (e) {
         /* Pins are additive; a failure here must never break status rendering. */
@@ -4637,6 +4712,8 @@
         renderFishingWaterPins();
       });
     }
+
+    map.on("zoomend", updateFishingFishIconVisibility);
 
     async function fetchAreaStatus() {
       let statusIndex = createEmptyStatusIndex();
