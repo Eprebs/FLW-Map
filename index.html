@@ -285,6 +285,62 @@
       line-height: 1.35;
     }
 
+    .all-areas-list {
+      margin-top: 10px;
+      max-height: 340px;
+      overflow-y: auto;
+      border-top: 1px solid rgba(124, 151, 167, 0.18);
+      padding-top: 4px;
+    }
+
+    .all-areas-group {
+      margin-top: 8px;
+    }
+
+    .all-areas-group-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    .all-areas-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(124, 151, 167, 0.12);
+    }
+
+    .all-areas-name {
+      color: var(--text);
+    }
+
+    .status-badge {
+      flex: none;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 999px;
+    }
+
+    .status-badge.open {
+      background: rgba(22, 163, 74, 0.18);
+      color: #4ade80;
+    }
+
+    .status-badge.closed {
+      background: rgba(220, 38, 38, 0.18);
+      color: #f87171;
+    }
+
+    .status-badge.unknown {
+      background: rgba(107, 114, 128, 0.25);
+      color: #9ca3af;
+    }
+
     .status-controls {
       display: flex;
       gap: 6px;
@@ -1225,6 +1281,10 @@
       <div id="imageryDateInfo" class="drawer-info" style="margin-top: 6px;">
         Imagery date: ESRI World Imagery varies by location/zoom; no single capture date.
       </div>
+      <label class="drawer-label">
+        <input type="checkbox" id="fishingPinsToggle" checked>
+        Fishing Water Pins (Fort Leonard Wood)
+      </label>
     </div>
 
     <h3>Terrain Overlays</h3>
@@ -1276,6 +1336,9 @@
       <div id="statusMeta" class="status-meta">
         Status source: --<br>
         Last updated: --
+      </div>
+      <div id="allAreasList" class="all-areas-list">
+        <div class="drawer-info">Full area list loads with area status.</div>
       </div>
     </div>
 
@@ -4097,6 +4160,11 @@
     let lastAutoFitBaseId = null;
     let mapBannerHideTimer = null;
     let latestStatusIndex = createEmptyStatusIndex();
+    let latestStatusRows = [];
+    let latestStatusIsStale = false;
+    let latestStatusSavedAt = null;
+    let fishingPinsLayerGroup = null;
+    let fishingWatersFeaturesCache = null;
 
     function setMapLoadBanner(message, tone = "info", autoHideMs = 0) {
       if (!mapLoadBanner) return;
@@ -4368,6 +4436,208 @@
       setMapLoadBanner(`Live status unavailable. Showing last known status saved ${savedLabel}. Verify on iSportsman before heading out.`, "warn", 12000);
     }
 
+    // -----------------------------
+    // All Areas list + FLW fishing water pins.
+    // The /api/areas feed returns every area the installation tracks
+    // (hunting areas, fishing waters, waterfowl check-ins, blinds,
+    // cantonment, firewood), but only the land areas have polygons.
+    // - The All Areas list renders every row of the current feed,
+    //   grouped by feed parent group, for any installation.
+    // - On Fort Leonard Wood, the fishing waters additionally get map
+    //   pins from flw_fishing_waters.geojson. Each pin shows the
+    //   fishing status plus the paired waterfowl hunting status when
+    //   that water has its own waterfowl check-in row.
+    // Both surfaces read the same status state as the polygons,
+    // including the clearly labeled LAST KNOWN fallback.
+    // -----------------------------
+    function naturalCompareAreaNames(a, b) {
+      const chunks = (s) => String(s || "").match(/\d+|\D+/g) || [];
+      const ca = chunks(a);
+      const cb = chunks(b);
+      const n = Math.min(ca.length, cb.length);
+      for (let i = 0; i < n; i++) {
+        const xa = ca[i];
+        const xb = cb[i];
+        if (/^\d+$/.test(xa) && /^\d+$/.test(xb)) {
+          const d = parseInt(xa, 10) - parseInt(xb, 10);
+          if (d !== 0) return d;
+          if (xa.length !== xb.length) return xa.length - xb.length;
+        } else {
+          const d = xa.localeCompare(xb);
+          if (d !== 0) return d;
+        }
+      }
+      return ca.length - cb.length;
+    }
+
+    function allAreasGroupRank(groupName) {
+      const g = String(groupName || "").toLowerCase();
+      if (g.includes("hunting")) return 0;
+      if (g.includes("fishing")) return 1;
+      return 2;
+    }
+
+    function buildAllAreasListHtml(rows, stale, savedAt) {
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return `<div class="drawer-info">No area status loaded yet. Use Refresh Area Status.</div>`;
+      }
+
+      const groups = new Map();
+      for (const row of rows) {
+        const g = String(row?.ParentName || row?.Category || "Areas").trim() || "Areas";
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push(row);
+      }
+
+      const groupNames = Array.from(groups.keys());
+      const feedOrder = new Map(groupNames.map((g, i) => [g, i]));
+      groupNames.sort((a, b) =>
+        (allAreasGroupRank(a) - allAreasGroupRank(b)) || (feedOrder.get(a) - feedOrder.get(b))
+      );
+
+      let html = "";
+      if (stale) {
+        const when = savedAt ? new Date(savedAt) : null;
+        const label = when && !Number.isNaN(when.getTime()) ? when.toLocaleString() : "an earlier visit";
+        html += `<div class="drawer-info" style="color: #fbbf24;">LAST KNOWN from ${label} — verify on iSportsman before heading out.</div>`;
+      }
+
+      for (const g of groupNames) {
+        const items = groups.get(g).slice()
+          .sort((x, y) => naturalCompareAreaNames(x?.Name || "", y?.Name || ""));
+        const title = g.replace(/\s+Parent Area$/i, "") || g;
+        html += `<div class="all-areas-group"><div class="all-areas-group-title">${escapeHtmlText(title)} (${items.length})</div>`;
+        for (const row of items) {
+          const badge = row?.Open === true
+            ? `<span class="status-badge open">OPEN</span>`
+            : row?.Open === false
+              ? `<span class="status-badge closed">CLOSED</span>`
+              : `<span class="status-badge unknown">UNKNOWN</span>`;
+          html += `<div class="all-areas-row"><span class="all-areas-name">${escapeHtmlText(row?.Name || "Area")}</span>${badge}</div>`;
+        }
+        html += `</div>`;
+      }
+      return html;
+    }
+
+    function renderAllAreasList() {
+      const el = document.getElementById("allAreasList");
+      if (!el) return;
+      el.innerHTML = buildAllAreasListHtml(latestStatusRows, latestStatusIsStale, latestStatusSavedAt);
+    }
+
+    function getPinStatusRow(statusIndex, syskey, name) {
+      if (!statusIndex) return null;
+      const sk = Number(syskey);
+      if (Number.isFinite(sk) && statusIndex.statusBySyskey?.has(sk)) {
+        return statusIndex.statusBySyskey.get(sk);
+      }
+      for (const candidate of expandAreaKeyCandidates(name)) {
+        if (statusIndex.statusByAreaKey?.has(candidate)) {
+          return statusIndex.statusByAreaKey.get(candidate);
+        }
+      }
+      return null;
+    }
+
+    function fishingPinStyleFor(statusRow) {
+      let fillColor = "#6b7280";
+      if (statusRow?.Open === true) fillColor = "#16a34a";
+      if (statusRow?.Open === false) fillColor = "#dc2626";
+      return { radius: 8, color: "#0b1220", weight: 2, fillColor, fillOpacity: 0.95 };
+    }
+
+    function buildFishingPinPopupHtml(feature, statusIndex, stale) {
+      const props = feature?.properties || {};
+      const name = props.name || "Fishing Water";
+      const fishRow = getPinStatusRow(statusIndex, props.area_syskey, props.name);
+      const wfRow = props.waterfowlName
+        ? getPinStatusRow(statusIndex, props.waterfowl_syskey, props.waterfowlName)
+        : null;
+      const fishText = fishRow ? (fishRow.Open ? "OPEN" : "CLOSED") : "UNKNOWN";
+      const unavailableNote = fishRow
+        ? ""
+        : `<span style="color: #fbbf24; font-size: 11px;">Status unavailable from source feed.</span><br>`;
+      const staleNote = stale
+        ? `<span style="color: #fbbf24; font-size: 11px;">Last known status — verify on iSportsman before heading out.</span><br>`
+        : "";
+      const signedIn = getCheckedInCount(fishRow);
+
+      let html =
+        `<strong>${escapeHtmlText(name)}</strong><br>` +
+        `Type: Fishing Water<br>` +
+        `Fishing: ${fishText}<br>`;
+      if (props.waterfowlName) {
+        const wfText = wfRow ? (wfRow.Open ? "OPEN" : "CLOSED") : "UNKNOWN";
+        html += `Waterfowl Hunting: ${wfText}<br>`;
+      }
+      html += unavailableNote + staleNote + `Signed in: ${signedIn}<br>` + buildSignInButtonHtml();
+      return html;
+    }
+
+    async function ensureFishingWatersFeatures() {
+      if (fishingWatersFeaturesCache) return fishingWatersFeaturesCache;
+      try {
+        const r = await fetch("flw_fishing_waters.geojson", { cache: "no-store" });
+        if (!r.ok) return [];
+        const gj = await r.json();
+        fishingWatersFeaturesCache = Array.isArray(gj?.features) ? gj.features : [];
+      } catch (e) {
+        return [];
+      }
+      return fishingWatersFeaturesCache;
+    }
+
+    function clearFishingPinsLayer() {
+      const old = fishingPinsLayerGroup;
+      fishingPinsLayerGroup = null;
+      if (old) {
+        try { map.removeLayer(old); } catch (e) { /* already gone */ }
+      }
+    }
+
+    async function renderFishingWaterPins() {
+      try {
+        const toggle = document.getElementById("fishingPinsToggle");
+        const enabled = !toggle || toggle.checked;
+        if (currentBaseId !== "fort_leonard_wood" || !enabled) {
+          clearFishingPinsLayer();
+          return;
+        }
+
+        const features = await ensureFishingWatersFeatures();
+        // Base or toggle state may have changed while loading.
+        if (currentBaseId !== "fort_leonard_wood") return;
+        if (toggle && !toggle.checked) return;
+
+        clearFishingPinsLayer();
+        if (!features.length) return;
+
+        fishingPinsLayerGroup = L.layerGroup();
+        for (const f of features) {
+          const coords = f?.geometry?.coordinates;
+          if (!Array.isArray(coords) || coords.length < 2) continue;
+          const lat = Number(coords[1]);
+          const lng = Number(coords[0]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          const fishRow = getPinStatusRow(latestStatusIndex, f?.properties?.area_syskey, f?.properties?.name);
+          const marker = L.circleMarker([lat, lng], fishingPinStyleFor(fishRow));
+          marker.bindPopup(buildFishingPinPopupHtml(f, latestStatusIndex, latestStatusIsStale));
+          fishingPinsLayerGroup.addLayer(marker);
+        }
+        fishingPinsLayerGroup.addTo(map);
+      } catch (e) {
+        /* Pins are additive; a failure here must never break status rendering. */
+      }
+    }
+
+    const fishingPinsToggleEl = document.getElementById("fishingPinsToggle");
+    if (fishingPinsToggleEl) {
+      fishingPinsToggleEl.addEventListener("change", () => {
+        renderFishingWaterPins();
+      });
+    }
+
     async function fetchAreaStatus() {
       let statusIndex = createEmptyStatusIndex();
       const requestedDate = getSelectedStatusDateISO();
@@ -4422,6 +4692,9 @@
 
         statusIndex = buildStatusIndex(data);
         latestStatusIndex = statusIndex;
+        latestStatusRows = data;
+        latestStatusIsStale = !!staleSaved;
+        latestStatusSavedAt = staleSaved ? (staleSaved.savedAt || null) : null;
 
         if (staleSaved) {
           showLastKnownStatus(staleSaved, requestedDate);
@@ -4449,9 +4722,15 @@
         if (saved) {
           statusIndex = buildStatusIndex(saved.data);
           latestStatusIndex = statusIndex;
+          latestStatusRows = saved.data;
+          latestStatusIsStale = true;
+          latestStatusSavedAt = saved.savedAt || null;
           showLastKnownStatus(saved, requestedDate);
         } else {
           console.error("Error in fetchAreaStatus:", e);
+          latestStatusRows = [];
+          latestStatusIsStale = false;
+          latestStatusSavedAt = null;
           statusSummary.textContent = "Status: error fetching data.";
           statusCounts.textContent = "Open: --, Closed: --, Signed in: --";
           if (statusMeta) {
@@ -4463,6 +4742,8 @@
         // Always render base polygons, even if live status is temporarily unavailable.
         latestStatusIndex = statusIndex;
         await renderFLWAreas(statusIndex);
+        renderAllAreasList();
+        renderFishingWaterPins();
         scheduleTileSeed();
       }
     }
