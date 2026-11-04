@@ -5,7 +5,8 @@
   <title>HuntAO</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#151a1e" />
-  <link rel="manifest" href="manifest.json" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="icon" href="Circle.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -4397,9 +4398,73 @@
       throw lastError || new Error("Status API request failed");
     }
 
+    // -----------------------------
+    // Low-signal support: last known status fallback + tile seeding.
+    // Live status is always tried first. Only when the live call fails,
+    // times out, or the source reports it could not answer do we fall
+    // back to the last good copy saved on THIS device, and it is always
+    // labeled "last known" with when it was saved.
+    // -----------------------------
+    const STATUS_CACHE_PREFIX = "huntao_status_cache_v1:";
+    const TILE_SEED_PREFIX = "huntao_tile_seed_v1:";
+    const TILE_CACHE_NAME = "huntao-tiles-v1";
+    const STATUS_FETCH_TIMEOUT_MS = 12000;
+    const TILE_SEED_MAX_TILES = 2500;
+    const TILE_SEED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+    function saveLastKnownStatus(baseId, date, json) {
+      try {
+        if (!json || !Array.isArray(json.data) || json.data.length === 0) return;
+        localStorage.setItem(
+          STATUS_CACHE_PREFIX + baseId + ":" + date,
+          JSON.stringify({ savedAt: new Date().toISOString(), data: json.data, meta: json.meta || null })
+        );
+      } catch (e) {
+        /* storage full/blocked: non-fatal */
+      }
+    }
+
+    function loadLastKnownStatus(baseId, date) {
+      try {
+        const raw = localStorage.getItem(STATUS_CACHE_PREFIX + baseId + ":" + date);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.data) || parsed.data.length === 0) return null;
+        return parsed;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function fetchWithTimeout(url, timeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(url, { cache: "no-store", signal: controller.signal }).finally(() => clearTimeout(timer));
+    }
+
+    function showLastKnownStatus(saved, requestedDate) {
+      let openCount = 0;
+      let closedCount = 0;
+      let signedInTotal = 0;
+      for (const a of saved.data) {
+        if (a.Open === true) openCount++;
+        if (a.Open === false) closedCount++;
+        signedInTotal += getCheckedInCount(a);
+      }
+      const savedDate = saved.savedAt ? new Date(saved.savedAt) : null;
+      const savedLabel = savedDate && !Number.isNaN(savedDate.getTime()) ? savedDate.toLocaleString() : "an earlier visit";
+      statusSummary.textContent = `Status (${requestedDate}) - LAST KNOWN from ${savedLabel}: ${openCount} open, ${closedCount} closed.`;
+      statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
+      if (statusMeta) {
+        statusMeta.innerHTML = `Status source: last known (saved on this device)<br>Date: ${requestedDate}<br>Saved: ${savedLabel}<br>Live status is unavailable right now - verify on iSportsman before heading out.`;
+      }
+      setMapLoadBanner(`Live status unavailable. Showing last known status saved ${savedLabel}. Verify on iSportsman before heading out.`, "warn", 12000);
+    }
+
     async function fetchAreaStatus() {
       let statusIndex = createEmptyStatusIndex();
       const requestedDate = getSelectedStatusDateISO();
+      const statusBaseId = getCurrentInstallation()?.statusBaseId || currentBaseId;
       try {
         statusSummary.textContent = "Status: loading…";
         if (statusMeta) {
@@ -4413,23 +4478,30 @@
         }
 
         setMapLoadBanner("Fetching live open/closed status...", "info");
-        const statusBaseId = getCurrentInstallation()?.statusBaseId || currentBaseId;
         const query = `/api/areas?base=${encodeURIComponent(statusBaseId)}&date=${encodeURIComponent(requestedDate)}`;
-        const r = await fetch(query, { cache: "no-store" });
-        
+        const r = await fetchWithTimeout(query, STATUS_FETCH_TIMEOUT_MS);
+
         if (!r.ok) {
-          statusSummary.textContent = "Status: error " + r.status;
-          statusCounts.textContent = "Open: --, Closed: --, Signed in: --";
-          if (statusMeta) {
-            statusMeta.innerHTML = `Status source: unavailable<br>Date: ${requestedDate}<br>Last updated: --`;
-          }
-          setMapLoadBanner("Area boundaries loaded. Live status is temporarily unavailable.", "warn", 5000);
-          return;
+          throw new Error(`Status API failed: ${r.status}`);
         }
 
         const json = await r.json();
-        
-        const data = json.data || [];
+        let data = Array.isArray(json.data) ? json.data : [];
+        let staleSaved = null;
+
+        if (data.length > 0) {
+          saveLastKnownStatus(statusBaseId, requestedDate, json);
+        } else if (json?.meta?.upstreamOk === false) {
+          // Source answered but could not get live data (e.g. iSportsman
+          // outage): use the last good copy saved on this device, if any.
+          const saved = loadLastKnownStatus(statusBaseId, requestedDate);
+          if (saved) {
+            data = saved.data;
+            staleSaved = saved;
+          } else {
+            throw new Error("Status source unavailable");
+          }
+        }
 
         let openCount = 0;
         let closedCount = 0;
@@ -4443,34 +4515,171 @@
 
         statusIndex = buildStatusIndex(data);
         latestStatusIndex = statusIndex;
-        
-        statusSummary.textContent = `Status (${requestedDate}): ${openCount} open, ${closedCount} closed.`;
-        statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
 
-        if (statusMeta) {
-          const sourceHost = json?.meta?.sourceHost || "unknown";
-          const fetchedAtRaw = json?.meta?.fetchedAt;
-          const fetchedAt = fetchedAtRaw ? new Date(fetchedAtRaw) : null;
-          const fetchedLabel = fetchedAt && !Number.isNaN(fetchedAt.getTime())
-            ? fetchedAt.toLocaleString()
-            : "unknown";
-          statusMeta.innerHTML = `Status source: ${sourceHost}<br>Date: ${requestedDate}<br>Last updated: ${fetchedLabel}`;
+        if (staleSaved) {
+          showLastKnownStatus(staleSaved, requestedDate);
+        } else {
+          statusSummary.textContent = `Status (${requestedDate}): ${openCount} open, ${closedCount} closed.`;
+          statusCounts.textContent = `Open: ${openCount}, Closed: ${closedCount}, Signed in: ${signedInTotal}`;
+
+          if (statusMeta) {
+            const sourceHost = json?.meta?.sourceHost || "unknown";
+            const fetchedAtRaw = json?.meta?.fetchedAt;
+            const fetchedAt = fetchedAtRaw ? new Date(fetchedAtRaw) : null;
+            const fetchedLabel = fetchedAt && !Number.isNaN(fetchedAt.getTime())
+              ? fetchedAt.toLocaleString()
+              : "unknown";
+            statusMeta.innerHTML = `Status source: ${sourceHost}<br>Date: ${requestedDate}<br>Last updated: ${fetchedLabel}`;
+          }
+
+          setMapLoadBanner("Areas and live status loaded.", "ok", 2500);
         }
-
-        setMapLoadBanner("Areas and live status loaded.", "ok", 2500);
 
       } catch (e) {
-        console.error("Error in fetchAreaStatus:", e);
-        statusSummary.textContent = "Status: error fetching data.";
-        statusCounts.textContent = "Open: --, Closed: --, Signed in: --";
-        if (statusMeta) {
-          statusMeta.innerHTML = `Status source: unavailable<br>Date: ${requestedDate}<br>Last updated: --`;
+        // Network failed or timed out: fall back to the last good copy
+        // saved on this device for this base + date, if there is one.
+        const saved = loadLastKnownStatus(statusBaseId, requestedDate);
+        if (saved) {
+          statusIndex = buildStatusIndex(saved.data);
+          latestStatusIndex = statusIndex;
+          showLastKnownStatus(saved, requestedDate);
+        } else {
+          console.error("Error in fetchAreaStatus:", e);
+          statusSummary.textContent = "Status: error fetching data.";
+          statusCounts.textContent = "Open: --, Closed: --, Signed in: --";
+          if (statusMeta) {
+            statusMeta.innerHTML = `Status source: unavailable<br>Date: ${requestedDate}<br>Last updated: --`;
+          }
+          setMapLoadBanner("Area boundaries loaded. Live status failed right now. Use Refresh Area Status to try again.", "warn", 7000);
         }
-        setMapLoadBanner("Area boundaries loaded. Live status failed right now. Use Refresh Area Status to try again.", "warn", 7000);
       } finally {
         // Always render base polygons, even if live status is temporarily unavailable.
         latestStatusIndex = statusIndex;
         await renderFLWAreas(statusIndex);
+        scheduleTileSeed();
+      }
+    }
+
+    // -----------------------------
+    // Background tile seeding: after an installation loads, quietly save
+    // the satellite tiles covering it at low zooms (z11-z13) into the
+    // same cache the service worker serves tiles from. Runs only on a
+    // decent connection, during idle time, and never blocks the map.
+    // Bounded per installation so storage stays sane; very large
+    // installations (e.g. Fort Wainwright) drop the highest zoom first.
+    // -----------------------------
+    function getAreaFeaturesBounds() {
+      if (!Array.isArray(areaFeatures) || areaFeatures.length === 0) return null;
+      let minLat = Infinity, minLng = Infinity, maxLat = -Infinity, maxLng = -Infinity;
+      const walkCoords = (coords) => {
+        if (!Array.isArray(coords)) return;
+        if (typeof coords[0] === "number" && typeof coords[1] === "number") {
+          const lng = coords[0], lat = coords[1];
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+          return;
+        }
+        for (const c of coords) walkCoords(c);
+      };
+      for (const f of areaFeatures) {
+        if (f && f.geometry && f.geometry.coordinates) walkCoords(f.geometry.coordinates);
+      }
+      if (!Number.isFinite(minLat) || !Number.isFinite(minLng)) return null;
+      return { minLat, minLng, maxLat, maxLng };
+    }
+
+    function lonToTileX(lon, z) {
+      return Math.floor((lon + 180) / 360 * Math.pow(2, z));
+    }
+
+    function latToTileY(lat, z) {
+      const rad = lat * Math.PI / 180;
+      return Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * Math.pow(2, z));
+    }
+
+    let tileSeedInFlight = false;
+
+    function scheduleTileSeed() {
+      try {
+        if (tileSeedInFlight) return;
+        if (!("caches" in window)) return;
+        if (!navigator.onLine) return;
+        const conn = navigator.connection || {};
+        if (conn.saveData) return;
+        if (conn.effectiveType && /(^|-)2g$/.test(conn.effectiveType)) return;
+
+        let lastSeed = 0;
+        try {
+          lastSeed = Number(localStorage.getItem(TILE_SEED_PREFIX + currentBaseId) || 0);
+        } catch (e) { /* ignore */ }
+        if (lastSeed && (Date.now() - lastSeed) < TILE_SEED_MAX_AGE_MS) return;
+
+        const bounds = getAreaFeaturesBounds();
+        if (!bounds) return;
+
+        const pad = 0.02;
+        const minLat = bounds.minLat - pad, maxLat = bounds.maxLat + pad;
+        const minLng = bounds.minLng - pad, maxLng = bounds.maxLng + pad;
+
+        const urls = [];
+        for (const z of [11, 12, 13]) {
+          const x0 = lonToTileX(minLng, z), x1 = lonToTileX(maxLng, z);
+          const y0 = latToTileY(maxLat, z), y1 = latToTileY(minLat, z);
+          const zoomCount = (x1 - x0 + 1) * (y1 - y0 + 1);
+          if (urls.length + zoomCount > TILE_SEED_MAX_TILES) break;
+          for (let x = x0; x <= x1; x++) {
+            for (let y = y0; y <= y1; y++) {
+              urls.push(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`);
+            }
+          }
+        }
+        if (urls.length === 0) return;
+
+        tileSeedInFlight = true;
+        const seedBaseId = currentBaseId;
+        const scheduleIdle = (cb) => {
+          if ("requestIdleCallback" in window) requestIdleCallback(() => cb(), { timeout: 5000 });
+          else setTimeout(cb, 250);
+        };
+
+        let idx = 0;
+        const step = async () => {
+          try {
+            const cache = await caches.open(TILE_CACHE_NAME);
+            const deadline = performance.now() + 400;
+            while (idx < urls.length && performance.now() < deadline) {
+              const url = urls[idx++];
+              try {
+                if (!(await cache.match(url))) {
+                  const resp = await fetch(url);
+                  if (resp && resp.ok) await cache.put(url, resp);
+                }
+              } catch (e) {
+                /* skip this tile, keep going */
+              }
+            }
+          } catch (e) {
+            tileSeedInFlight = false;
+            return;
+          }
+          if (idx < urls.length) {
+            scheduleIdle(step);
+          } else {
+            try {
+              localStorage.setItem(TILE_SEED_PREFIX + seedBaseId, String(Date.now()));
+            } catch (e) { /* ignore */ }
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({ type: "TRIM_TILE_CACHE" });
+            }
+            tileSeedInFlight = false;
+          }
+        };
+        scheduleIdle(step);
+      } catch (e) {
+        /* seeding is best-effort only */
+        tileSeedInFlight = false;
       }
     }
 
@@ -5979,7 +6188,7 @@
     // Service worker registration
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("service-worker.js").catch(err => console.warn("SW registration failed:", err));
+        navigator.serviceWorker.register("sw.js").catch(err => console.warn("SW registration failed:", err));
       });
     }
   </script>
