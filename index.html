@@ -3526,6 +3526,11 @@
       waypointLayer.clearLayers();
       waypointVisualsById.clear();
       waypointRecords.forEach(record => addWaypointRecord(record, false));
+      // Pins arriving (cloud sync, share-link import) can unlock the
+      // deep tile-seeding pass for this installation.
+      try {
+        if (typeof scheduleTileSeed === "function") scheduleTileSeed();
+      } catch (e) { /* seeding is best-effort only */ }
     }
 
     function renderSavedTracks() {
@@ -4406,10 +4411,13 @@
     // labeled "last known" with when it was saved.
     // -----------------------------
     const STATUS_CACHE_PREFIX = "huntao_status_cache_v1:";
-    const TILE_SEED_PREFIX = "huntao_tile_seed_v1:";
-    const TILE_CACHE_NAME = "huntao-tiles-v1";
+    const TILE_SEED_PREFIX = "huntao_tile_seed_v2:";
+    const TILE_DEEP_SEED_PREFIX = "huntao_tile_deep_seed_v1:";
+    const TILE_CACHE_NAME = "huntao-tiles-v2";
     const STATUS_FETCH_TIMEOUT_MS = 12000;
-    const TILE_SEED_MAX_TILES = 2500;
+    const TILE_SEED_MAX_TILES = 1500;
+    const TILE_DEEP_SEED_MAX_TILES = 2000;
+    const TILE_DEEP_SEED_RADIUS_M = 1200;
     const TILE_SEED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
     function saveLastKnownStatus(baseId, date, json) {
@@ -4562,12 +4570,51 @@
 
     // -----------------------------
     // Background tile seeding: after an installation loads, quietly save
-    // the satellite tiles covering it at low zooms (z11-z13) into the
-    // same cache the service worker serves tiles from. Runs only on a
-    // decent connection, during idle time, and never blocks the map.
-    // Bounded per installation so storage stays sane; very large
-    // installations (e.g. Fort Wainwright) drop the highest zoom first.
+    // satellite tiles into the same cache the service worker serves from.
+    // Two passes, lowest zooms first (the tile cache trims oldest-first,
+    // so deep tiles seeded last survive the longest):
+    // 1. Base pass: the whole installation at z11-z14, cumulative-capped
+    //    per installation so storage stays sane; very large installations
+    //    (e.g. Fort Wainwright) drop the highest zooms first.
+    // 2. Deep pass: z15-z16 within ~1.2 km of the user's own pins, so the
+    //    spots they actually hunt stay sharp offline; falls back to the
+    //    installation's default center when there are no pins in bounds.
+    // Runs only on a decent connection, during idle time, and never
+    // blocks the map. Re-seeds at most every 7 days, or sooner when the
+    // pin set changes.
     // -----------------------------
+    function tileRangeForRadius(lat, lng, radiusM, z) {
+      const dLat = radiusM / 111320;
+      const dLng = radiusM / (111320 * Math.max(0.01, Math.cos(lat * Math.PI / 180)));
+      return {
+        x0: lonToTileX(lng - dLng, z), x1: lonToTileX(lng + dLng, z),
+        y0: latToTileY(lat + dLat, z), y1: latToTileY(lat - dLat, z)
+      };
+    }
+
+    // Spots the deep pass sharpens. waypointRecords is the client's
+    // canonical pin list: cloud-synced for signed-in users, held in
+    // memory for anonymous users, and updated on import/placement.
+    function getDeepSeedSpots(minLat, maxLat, minLng, maxLng) {
+      const spots = [];
+      if (typeof waypointRecords !== "undefined" && Array.isArray(waypointRecords)) {
+        for (const wp of waypointRecords) {
+          const lat = Number(wp && wp.lat), lng = Number(wp && wp.lng);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          if (lat < minLat || lat > maxLat || lng < minLng || lng > maxLng) continue;
+          spots.push({ lat, lng });
+        }
+      }
+      if (spots.length === 0) {
+        const inst = typeof getCurrentInstallation === "function" ? getCurrentInstallation() : null;
+        const center = inst && inst.center;
+        if (Array.isArray(center) && center.length === 2) {
+          const lat = Number(center[0]), lng = Number(center[1]);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) spots.push({ lat, lng });
+        }
+      }
+      return spots;
+    }
     function getAreaFeaturesBounds() {
       if (!Array.isArray(areaFeatures) || areaFeatures.length === 0) return null;
       let minLat = Infinity, minLng = Infinity, maxLat = -Infinity, maxLng = -Infinity;
@@ -4610,31 +4657,75 @@
         if (conn.saveData) return;
         if (conn.effectiveType && /(^|-)2g$/.test(conn.effectiveType)) return;
 
-        let lastSeed = 0;
-        try {
-          lastSeed = Number(localStorage.getItem(TILE_SEED_PREFIX + currentBaseId) || 0);
-        } catch (e) { /* ignore */ }
-        if (lastSeed && (Date.now() - lastSeed) < TILE_SEED_MAX_AGE_MS) return;
-
         const bounds = getAreaFeaturesBounds();
         if (!bounds) return;
 
         const pad = 0.02;
         const minLat = bounds.minLat - pad, maxLat = bounds.maxLat + pad;
         const minLng = bounds.minLng - pad, maxLng = bounds.maxLng + pad;
+        const satTileUrl = (z, x, y) =>
+          `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 
         const urls = [];
-        for (const z of [11, 12, 13]) {
-          const x0 = lonToTileX(minLng, z), x1 = lonToTileX(maxLng, z);
-          const y0 = latToTileY(maxLat, z), y1 = latToTileY(minLat, z);
-          const zoomCount = (x1 - x0 + 1) * (y1 - y0 + 1);
-          if (urls.length + zoomCount > TILE_SEED_MAX_TILES) break;
-          for (let x = x0; x <= x1; x++) {
-            for (let y = y0; y <= y1; y++) {
-              urls.push(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`);
+        let stampBase = false;
+        let stampDeepSig = null;
+
+        // Pass 1 (base): whole installation at z11-z14, cumulative cap.
+        let lastSeed = 0;
+        try {
+          lastSeed = Number(localStorage.getItem(TILE_SEED_PREFIX + currentBaseId) || 0);
+        } catch (e) { /* ignore */ }
+        if (!(lastSeed && (Date.now() - lastSeed) < TILE_SEED_MAX_AGE_MS)) {
+          let baseAdded = 0;
+          for (const z of [11, 12, 13, 14]) {
+            const x0 = lonToTileX(minLng, z), x1 = lonToTileX(maxLng, z);
+            const y0 = latToTileY(maxLat, z), y1 = latToTileY(minLat, z);
+            const zoomCount = (x1 - x0 + 1) * (y1 - y0 + 1);
+            if (baseAdded + zoomCount > TILE_SEED_MAX_TILES) break;
+            for (let x = x0; x <= x1; x++) {
+              for (let y = y0; y <= y1; y++) {
+                urls.push(satTileUrl(z, x, y));
+                baseAdded++;
+              }
             }
           }
+          stampBase = baseAdded > 0;
         }
+
+        // Pass 2 (deep): z15 across all spots, then z16, deduped and
+        // capped. Skipped when this exact pin set was seeded recently.
+        const spots = getDeepSeedSpots(minLat, maxLat, minLng, maxLng);
+        if (spots.length > 0) {
+          const sig = spots.map(s => `${s.lat.toFixed(3)},${s.lng.toFixed(3)}`).sort().join(";");
+          let deepRec = null;
+          try {
+            deepRec = JSON.parse(localStorage.getItem(TILE_DEEP_SEED_PREFIX + currentBaseId) || "null");
+          } catch (e) { /* ignore */ }
+          const deepFresh = deepRec && deepRec.sig === sig &&
+            (Date.now() - Number(deepRec.at || 0)) < TILE_SEED_MAX_AGE_MS;
+          if (!deepFresh) {
+            const seen = new Set(urls);
+            let deepCount = 0;
+            outer:
+            for (const z of [15, 16]) {
+              for (const spot of spots) {
+                const r = tileRangeForRadius(spot.lat, spot.lng, TILE_DEEP_SEED_RADIUS_M, z);
+                for (let x = r.x0; x <= r.x1; x++) {
+                  for (let y = r.y0; y <= r.y1; y++) {
+                    const u = satTileUrl(z, x, y);
+                    if (seen.has(u)) continue;
+                    if (deepCount >= TILE_DEEP_SEED_MAX_TILES) break outer;
+                    seen.add(u);
+                    urls.push(u);
+                    deepCount++;
+                  }
+                }
+              }
+            }
+            if (deepCount > 0) stampDeepSig = sig;
+          }
+        }
+
         if (urls.length === 0) return;
 
         tileSeedInFlight = true;
@@ -4668,7 +4759,15 @@
             scheduleIdle(step);
           } else {
             try {
-              localStorage.setItem(TILE_SEED_PREFIX + seedBaseId, String(Date.now()));
+              if (stampBase) {
+                localStorage.setItem(TILE_SEED_PREFIX + seedBaseId, String(Date.now()));
+              }
+              if (stampDeepSig) {
+                localStorage.setItem(
+                  TILE_DEEP_SEED_PREFIX + seedBaseId,
+                  JSON.stringify({ sig: stampDeepSig, at: Date.now() })
+                );
+              }
             } catch (e) { /* ignore */ }
             if (navigator.serviceWorker && navigator.serviceWorker.controller) {
               navigator.serviceWorker.controller.postMessage({ type: "TRIM_TILE_CACHE" });
