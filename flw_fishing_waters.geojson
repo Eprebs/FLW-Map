@@ -1,0 +1,314 @@
+{
+ "description": "Point locations for the Fort Leonard Wood fishing waters in the iSportsman 'Fishing Parent Area' status group. Coordinates are the map pins published on the official iSportsman Fort Leonard Wood Fishing Maps page (ftleonardwood.isportsman.net), each cross-checked Nov 2026: 12 pins fall inside a USGS National Hydrography Dataset waterbody polygon; the other 5 were verified directly on Esri satellite imagery (pin on visible water). waterfowlName / waterfowl_syskey link each water to its paired '<Name> Waterfowl Hunting' status row in the Hunting Parent Area group (10 of the 17 waters have one).",
+ "features": [
+  {
+   "geometry": {
+    "coordinates": [
+     -92.195559,
+     37.716539
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4837,
+    "confidence": "high",
+    "name": "Babb Pond",
+    "source": "iSportsman Fishing Maps page; inside USGS NHD waterbody",
+    "waterfowlName": null,
+    "waterfowl_syskey": null
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.158558,
+     37.691001
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4779,
+    "confidence": "high",
+    "name": "Bloodland Lake",
+    "source": "iSportsman Fishing Maps page; inside USGS NHD waterbody",
+    "waterfowlName": "Bloodland Lake Waterfowl Hunting",
+    "waterfowl_syskey": 4885
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.166867,
+     37.684265
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4840,
+    "confidence": "high",
+    "name": "Bloodland Pond",
+    "source": "iSportsman Fishing Maps page; inside USGS NHD waterbody",
+    "waterfowlName": "Bloodland Pond Waterfowl Hunting",
+    "waterfowl_syskey": 4886
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.050176,
+     37.750898
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4834,
+    "confidence": "high",
+    "name": "Breeden Spring Pond",
+    "source": "iSportsman Fishing Maps page; inside USGS NHD waterbody",
+    "waterfowlName": "Breeden Spring Waterfowl Hunting",
+    "waterfowl_syskey": 4887
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.24058,
+     37.610489
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4846,
+    "confidence": "high",
+    "name": "Cook Pond",
+    "source": "iSportsman Fishing Maps page (Google place coordinates); inside USGS NHD waterbody",
+    "waterfowlName": null,
+    "waterfowl_syskey": null
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.100721,
+     37.77917
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4832,
+    "confidence": "high",
+    "name": "Decker Ridge Pond",
+    "source": "iSportsman Fishing Maps page (listed there as 'Decker Pond'); satellite-verified on Esri World Imagery",
+    "waterfowlName": "Decker Ridge Waterfowl Hunting",
+    "waterfowl_syskey": 4888
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.063421,
+     37.719845
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4835,
+    "confidence": "high",
+    "name": "Gravel Pit Pond",
+    "source": "iSportsman Fishing Maps page; inside USGS NHD waterbody",
+    "waterfowlName": "Gravel Pit Pond Waterfowl Hunting",
+    "waterfowl_syskey": 4889
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.134616,
+     37.756137
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4833,
+    "confidence": "high",
+    "name": "Indiana Avenue Pond",
+    "source": "iSportsman Fishing Maps page; satellite-verified on Esri World Imagery",
+    "waterfowlName": null,
+    "waterfowl_syskey": null
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.178229,
+     37.621972
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4844,
+    "confidence": "high",
+    "name": "Knights Pond",
+    "source": "iSportsman Fishing Maps page (listed there as 'Knight's Pond'); inside USGS NHD waterbody",
+    "waterfowlName": null,
+    "waterfowl_syskey": null
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.110649,
+     37.771227
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4849,
+    "confidence": "high",
+    "name": "Littlewood Pond",
+    "source": "iSportsman Fishing Maps page; satellite-verified on Esri World Imagery",
+    "waterfowlName": null,
+    "waterfowl_syskey": null
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.237728,
+     37.61466
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4845,
+    "confidence": "high",
+    "name": "Macedonia Pond",
+    "source": "iSportsman Fishing Maps page; inside USGS NHD waterbody",
+    "waterfowlName": null,
+    "waterfowl_syskey": null
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.191992,
+     37.69254
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4838,
+    "confidence": "high",
+    "name": "Penns Pond",
+    "source": "iSportsman Fishing Maps page (listed there as 'Penn's Pond'); inside USGS NHD waterbody",
+    "waterfowlName": "Penns Pond Waterfowl Hunting",
+    "waterfowl_syskey": 4884
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.16194,
+     37.678916
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4841,
+    "confidence": "high",
+    "name": "Range 25 Pond",
+    "source": "iSportsman Fishing Maps page; satellite-verified on Esri World Imagery",
+    "waterfowlName": "Range 25 Pond Waterfowl Hunting",
+    "waterfowl_syskey": 4890
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.170326,
+     37.664344
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4843,
+    "confidence": "high",
+    "name": "Range 27A Pond",
+    "source": "iSportsman Fishing Maps page; satellite-verified on Esri World Imagery",
+    "waterfowlName": "Range 27A Pond Waterfowl Hunting",
+    "waterfowl_syskey": 4891
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.169027,
+     37.737008
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4836,
+    "confidence": "high",
+    "name": "Route 20 Pond",
+    "source": "iSportsman Fishing Maps page; inside USGS NHD waterbody",
+    "waterfowlName": "Route 20 Pond Waterfowl Hunting",
+    "waterfowl_syskey": 4892
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.15746,
+     37.681877
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4848,
+    "confidence": "high",
+    "name": "TA228 Pond",
+    "source": "iSportsman Fishing Maps page; inside USGS NHD waterbody",
+    "waterfowlName": "TA228 Pond Waterfowl Hunting",
+    "waterfowl_syskey": 4893
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     -92.047448,
+     37.740582
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "area_syskey": 4847,
+    "confidence": "high",
+    "name": "TA250 Lake (open/closed on site)",
+    "source": "iSportsman Fishing Maps page (listed there as 'TA250 Lake'); inside USGS NHD waterbody",
+    "waterfowlName": null,
+    "waterfowl_syskey": null
+   },
+   "type": "Feature"
+  }
+ ],
+ "name": "flw_fishing_waters",
+ "source": "iSportsman Fort Leonard Wood Fishing Maps page pond links (Nov 2026), cross-checked with OpenStreetMap",
+ "type": "FeatureCollection"
+}
