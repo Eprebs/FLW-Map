@@ -62,6 +62,126 @@ function getISportsmanBase(baseId) {
   const key = String(baseId || "").trim().toLowerCase();
   return ISPORTSMAN_BASES[key] || ISPORTSMAN_BASES.fort_leonard_wood;
 }
+
+// ----------------------------------------------------
+// Short in-memory cache for /api/areas responses.
+// A burst of visitors shares one upstream iSportsman call per
+// (installation, date) instead of one call per page load. Only
+// successful responses (upstreamOk with a non-empty data set) are
+// cached, and only for AREAS_CACHE_TTL_MS. Failures are never
+// cached, and expired entries are never served as live: after the
+// TTL the next request goes upstream again, and if that fails the
+// client-side last known status fallback handles display, exactly
+// as it did before this cache existed.
+// ----------------------------------------------------
+const AREAS_CACHE_TTL_MS = 120000;
+const AREAS_CACHE_MAX_KEYS = 64;
+const areasResponseCache = new Map(); // key -> { response, storedAt }
+const areasInFlight = new Map(); // key -> Promise<response>
+
+function getFreshAreasCacheEntry(key) {
+  const entry = areasResponseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.storedAt >= AREAS_CACHE_TTL_MS) {
+    areasResponseCache.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function storeAreasCacheEntry(key, response) {
+  // Re-insert so eviction drops the least recently stored keys first.
+  areasResponseCache.delete(key);
+  areasResponseCache.set(key, { response, storedAt: Date.now() });
+  while (areasResponseCache.size > AREAS_CACHE_MAX_KEYS) {
+    areasResponseCache.delete(areasResponseCache.keys().next().value);
+  }
+}
+
+// Performs the actual upstream iSportsman area query and builds the
+// normalized response envelope. Upstream problems (unreachable,
+// timed out, unparseable) become the standard failure envelope
+// (data: [] + upstreamOk: false) instead of a throw, so clients can
+// tell "source is down" from "no areas" and use their on-device
+// last known status.
+async function fetchAreasFromUpstream(ISPORTSMAN_BASE, requestedDate) {
+  try {
+    const payload = {
+      activity: "",
+      area: "",
+      category: "",
+      date: requestedDate,
+      end_date: "",
+      parent_area: "",
+      status: ""
+    };
+
+    const apiUrl = `${ISPORTSMAN_BASE}/api/area/query?cacheBuster=${Date.now()}`;
+
+    // Bound the upstream wait: iSportsman sometimes hangs with no reply,
+    // and a stuck status call should fail promptly so clients can fall
+    // back gracefully instead of spinning.
+    const upstreamController = new AbortController();
+    const upstreamTimer = setTimeout(() => upstreamController.abort(), 10000);
+    let text;
+    try {
+      const r = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json, text/plain, */*",
+          "Origin": ISPORTSMAN_BASE,
+          "Referer": `${ISPORTSMAN_BASE}/areas.aspx`,
+          "User-Agent": "Mozilla/5.0"
+        },
+        body: JSON.stringify(payload),
+        signal: upstreamController.signal
+      });
+
+      text = await r.text();
+    } finally {
+      clearTimeout(upstreamTimer);
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      parsed = null;
+    }
+
+    // ⭐ Normalize to the format your gpkg + frontend expect
+    let raw = [];
+    if (parsed && Array.isArray(parsed.data)) {
+      raw = parsed.data;
+    }
+
+    return {
+      data: raw,
+      meta: {
+        sourceHost: new URL(ISPORTSMAN_BASE).host,
+        requestedDate,
+        fetchedAt: new Date().toISOString(),
+        upstreamOk: Boolean(parsed && Array.isArray(parsed.data))
+      }
+    };
+  } catch (err) {
+    console.error("Proxy error:", err);
+    // Upstream unreachable, timed out, or unparseable: return the normal
+    // envelope with an empty data set + upstreamOk:false (instead of a
+    // hard 500) so clients can tell "source is down" from "no areas"
+    // and use their on-device last known status.
+    return {
+      data: [],
+      meta: {
+        sourceHost: new URL(ISPORTSMAN_BASE).host,
+        requestedDate,
+        fetchedAt: new Date().toISOString(),
+        upstreamOk: false
+      }
+    };
+  }
+}
 const authRateLimitStore = new Map();
 
 function ensureDataStore() {
@@ -1751,101 +1871,60 @@ const server = http.createServer(async (req, res) => {
     const requestedBaseId = String(url.searchParams.get("base") || "fort_leonard_wood").trim().toLowerCase();
     const requestedDate = normalizeStatusDate(url.searchParams.get("date"));
     const ISPORTSMAN_BASE = getISportsmanBase(requestedBaseId);
-    try {
+    const cacheKey = `${requestedBaseId}|${requestedDate}`;
 
-      const payload = {
-        activity: "",
-        area: "",
-        category: "",
-        date: requestedDate,
-        end_date: "",
-        parent_area: "",
-        status: ""
-      };
-
-      const apiUrl = `${ISPORTSMAN_BASE}/api/area/query?cacheBuster=${Date.now()}`;
-
-      // Bound the upstream wait: iSportsman sometimes hangs with no reply,
-      // and a stuck status call should fail promptly so clients can fall
-      // back gracefully instead of spinning.
-      const upstreamController = new AbortController();
-      const upstreamTimer = setTimeout(() => upstreamController.abort(), 10000);
-      let text;
-      try {
-        const r = await fetch(apiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/plain, */*",
-            "Origin": ISPORTSMAN_BASE,
-            "Referer": `${ISPORTSMAN_BASE}/areas.aspx`,
-            "User-Agent": "Mozilla/5.0"
-          },
-          body: JSON.stringify(payload),
-          signal: upstreamController.signal
-        });
-
-        text = await r.text();
-      } finally {
-        clearTimeout(upstreamTimer);
-      }
-
-      let parsed;
-      try {
-        parsed = JSON.parse(text);
-      } catch (e) {
-        parsed = null;
-      }
-
-      let raw = [];
-      if (parsed && Array.isArray(parsed.data)) {
-        raw = parsed.data;
-      }
-
-      // ⭐ Normalize to the format your gpkg + frontend expect
+    const sendAreasResponse = (responseBody) => {
       res.writeHead(200, {
         "Content-Type": "application/json; charset=utf-8",
         "Access-Control-Allow-Origin": CORS_ORIGIN,
         "Access-Control-Allow-Headers": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
       });
+      res.end(JSON.stringify(responseBody));
+    };
 
-      const response = {
-        data: raw,
-        meta: {
-          sourceHost: new URL(ISPORTSMAN_BASE).host,
-          requestedDate,
-          fetchedAt: new Date().toISOString(),
-          upstreamOk: Boolean(parsed && Array.isArray(parsed.data))
-        }
-      };
-      res.end(JSON.stringify(response));
-    } catch (err) {
-      console.error("Proxy error:", err);
-      // Upstream unreachable, timed out, or unparseable: return the normal
-      // envelope with an empty data set + upstreamOk:false (instead of a
-      // hard 500) so clients can tell "source is down" from "no areas"
-      // and use their on-device last known status.
-      try {
-        res.writeHead(200, {
-          "Content-Type": "application/json; charset=utf-8",
-          "Access-Control-Allow-Origin": CORS_ORIGIN,
-          "Access-Control-Allow-Headers": "*",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
-        });
-        res.end(JSON.stringify({
-          data: [],
-          meta: {
-            sourceHost: new URL(ISPORTSMAN_BASE).host,
-            requestedDate,
-            fetchedAt: new Date().toISOString(),
-            upstreamOk: false
+    // Fresh cache hit: serve the shared response without an upstream
+    // call. meta.fetchedAt keeps the original fetch time so clients see
+    // the true age; meta.cached flags that this copy was shared.
+    const cachedEntry = getFreshAreasCacheEntry(cacheKey);
+    if (cachedEntry) {
+      sendAreasResponse({
+        data: cachedEntry.response.data,
+        meta: { ...cachedEntry.response.meta, cached: true }
+      });
+      return;
+    }
+
+    // Coalesce concurrent requests for the same installation + date
+    // onto a single upstream fetch. Only successful responses enter
+    // the cache (see the storeAreasCacheEntry call below); failures
+    // fall through uncached so the next request retries upstream.
+    let inFlight = areasInFlight.get(cacheKey);
+    if (!inFlight) {
+      inFlight = (async () => {
+        try {
+          const upstreamResponse = await fetchAreasFromUpstream(ISPORTSMAN_BASE, requestedDate);
+          if (upstreamResponse.meta.upstreamOk && upstreamResponse.data.length > 0) {
+            storeAreasCacheEntry(cacheKey, upstreamResponse);
           }
-        }));
-      } catch (e) {
+          return upstreamResponse;
+        } finally {
+          areasInFlight.delete(cacheKey);
+        }
+      })();
+      areasInFlight.set(cacheKey, inFlight);
+    }
+
+    try {
+      sendAreasResponse(await inFlight);
+    } catch (err) {
+      // fetchAreasFromUpstream already converts upstream problems into
+      // the failure envelope, so this is only a last-resort guard.
+      console.error("Proxy error:", err);
+      if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: String(err) }));
       }
+      res.end(JSON.stringify({ error: String(err) }));
     }
     return;
   }
