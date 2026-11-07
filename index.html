@@ -1119,6 +1119,104 @@
       color: var(--gold-strong);
     }
 
+    /* Waypoint popup action buttons */
+    .wp-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .wp-btn {
+      padding: 8px 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(124, 151, 167, 0.35);
+      background: linear-gradient(180deg, rgba(42, 74, 64, 0.95), rgba(31, 58, 49, 0.95));
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .wp-btn:active {
+      transform: translateY(1px);
+    }
+
+    .wp-btn.danger {
+      background: linear-gradient(180deg, rgba(94, 38, 32, 0.95), rgba(70, 26, 22, 0.95));
+      border-color: rgba(255, 120, 100, 0.4);
+    }
+
+    .wp-btn.danger.armed {
+      background: #b3261e;
+      border-color: #ff8a75;
+      color: #ffffff;
+    }
+
+    /* Waypoint move-mode bar */
+    #wpMoveBar {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: calc(18px + env(safe-area-inset-bottom));
+      z-index: 1500;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      background: rgba(17, 26, 33, 0.96);
+      border: 1px solid rgba(255, 142, 72, 0.62);
+      border-radius: 12px;
+      padding: 10px 12px;
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.45);
+      max-width: min(92vw, 480px);
+    }
+
+    #wpMoveBar .wp-move-label {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    /* Long-press progress ring (waypoint placement) */
+    #wpHoldRing {
+      position: fixed;
+      width: 52px;
+      height: 52px;
+      margin: -26px 0 0 -26px;
+      z-index: 2100;
+      pointer-events: none;
+      display: none;
+    }
+
+    #wpHoldRing .wp-hold-ring-bg {
+      fill: rgba(11, 17, 20, 0.35);
+      stroke: rgba(255, 255, 255, 0.35);
+      stroke-width: 4;
+    }
+
+    #wpHoldRing .wp-hold-ring-fg {
+      fill: none;
+      stroke: var(--gold);
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-dasharray: 125.6;
+      stroke-dashoffset: 125.6;
+      transform: rotate(-90deg);
+      transform-origin: center;
+    }
+
+    /* Marker highlight while in move mode */
+    .waypoint-marker--moving svg {
+      animation: wpMovePulse 0.9s ease-in-out infinite;
+      transform-origin: 50% 100%;
+    }
+
+    @keyframes wpMovePulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.14); }
+    }
+
     .legend-item {
       display: flex;
       align-items: center;
@@ -1664,6 +1762,21 @@
     </div>
   </div>
 
+  <!-- Waypoint move-mode bar -->
+  <div id="wpMoveBar">
+    <span class="wp-move-label" id="wpMoveLabel">Drag the pin to its new spot.</span>
+    <button type="button" class="modal-btn secondary" id="wpMoveCancelBtn">Cancel</button>
+    <button type="button" class="modal-btn primary" id="wpMoveDoneBtn">Done</button>
+  </div>
+
+  <!-- Long-press progress ring -->
+  <div id="wpHoldRing" aria-hidden="true">
+    <svg viewBox="0 0 48 48" width="52" height="52">
+      <circle class="wp-hold-ring-bg" cx="24" cy="24" r="20"></circle>
+      <circle class="wp-hold-ring-fg" id="wpHoldRingFg" cx="24" cy="24" r="20"></circle>
+    </svg>
+  </div>
+
   <!-- Generic confirmation modal -->
   <div id="modalBackdrop" class="modal-backdrop">
     <div class="modal">
@@ -1783,6 +1896,7 @@
       center: BASE_LOCATIONS[DEFAULT_BASE_ID].center,
       zoom: BASE_LOCATIONS[DEFAULT_BASE_ID].zoom,
       zoomControl: false,
+      doubleClickZoom: false,
       rotate: true,
       bearing: 0,
       touchRotate: false
@@ -3181,7 +3295,7 @@
     };
 
     // Create icon for a specific waypoint type
-    function createWaypointIcon(type, windAngle) {
+    function createWaypointIcon(type, windAngle, extraClass = "") {
       const typeData = waypointTypes[type] || waypointTypes['generic'];
       const angle = (typeof windAngle === "number" && isFinite(windAngle)) ? windAngle : (currentWind.angle || 0);
       const windDeg = (angle + 180) % 360;
@@ -3210,7 +3324,7 @@
         iconSize: [48, 52],
         iconAnchor: [24, 48],
         popupAnchor: [0, -48],
-        className: 'waypoint-marker'
+        className: ('waypoint-marker ' + extraClass).trim()
       });
     }
 
@@ -3252,7 +3366,7 @@
     let savedTrackLayers = [];
     let placingWaypoint = false;
     const IS_TOUCH_DEVICE = ("ontouchstart" in window) || (navigator.maxTouchPoints > 0);
-    const WAYPOINT_LONG_PRESS_MS = 650;
+    const WAYPOINT_LONG_PRESS_MS = 800;
     const WAYPOINT_LONG_PRESS_MOVE_PX = 14;
     const AREA_POPUP_CLICK_DELAY_MS = 220;
     const AREA_POPUP_SUPPRESS_ZOOM_FOR_DESKTOP = 15;
@@ -3306,7 +3420,7 @@
       const typeLabel = waypointTypes[record.type]?.label || waypointTypes.generic.label;
       const displayName = escapeHtmlText(record.name || typeLabel);
       const safeId = escapeHtmlText(String(record.id || ""));
-      return `<strong>${displayName}</strong><br><small>Lat: ${record.lat.toFixed(5)}, Lng: ${record.lng.toFixed(5)}</small><br><small style="color: var(--gold-strong);">Wind: ${windMph} mph ${windDir}</small><br><small style="color: var(--muted);">Drag to move<br>Right-click to delete</small><button type="button" class="share-waypoint-btn" data-waypoint-id="${safeId}" style="display:block;width:100%;margin-top:8px;padding:6px;background:linear-gradient(180deg, rgba(42,74,64,0.95), rgba(31,58,49,0.95));color:var(--text);border:1px solid rgba(124,151,167,0.35);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">Share This Pin</button>`;
+      return `<strong>${displayName}</strong><br><small style="color: var(--muted);">${escapeHtmlText(typeLabel)}</small><br><small>Lat: ${record.lat.toFixed(5)}, Lng: ${record.lng.toFixed(5)}</small><br><small style="color: var(--gold-strong);">Wind: ${windMph} mph ${windDir}</small><div class="wp-actions"><button type="button" class="wp-btn" data-wp-action="edit" data-waypoint-id="${safeId}">Edit</button><button type="button" class="wp-btn" data-wp-action="move" data-waypoint-id="${safeId}">Move</button><button type="button" class="wp-btn share-waypoint-btn" data-waypoint-id="${safeId}">Share</button><button type="button" class="wp-btn danger" data-wp-action="delete" data-waypoint-id="${safeId}">Delete</button></div>`;
     }
 
     function sanitizeSharedWaypoint(wp) {
@@ -3494,26 +3608,62 @@
 
     function addWaypointRecord(record, openPopup = false) {
       const latlng = L.latLng(record.lat, record.lng);
+      // Draggable capability exists so Move mode can enable it on demand,
+      // but markers stay locked against accidental drags the rest of the time.
       const marker = L.marker(latlng, { draggable: true, icon: createWaypointIcon(record.type, record.windAngle) }).addTo(waypointLayer);
+      if (marker.dragging) marker.dragging.disable();
 
       marker.bindPopup(buildWaypointPopup(record));
       if (openPopup) marker.openPopup();
       marker.wayPointType = record.type;
       marker.customName = record.name || "";
 
-      marker.on("dragend", () => {
+      waypointVisualsById.set(record.id, { marker });
+      refreshWaypointWind(record); // async: per-spot wind for this waypoint
+    }
+
+    // ---- Waypoint move mode -------------------------------------------------
+    // Entered only from the popup's Move button. The pin pulses and becomes
+    // draggable; Done saves the new spot, Cancel restores the old one.
+    let waypointMoveState = null;
+
+    function enterWaypointMoveMode(record) {
+      if (waypointMoveState) finishWaypointMove(false);
+      const visuals = waypointVisualsById.get(record.id);
+      if (!visuals || !visuals.marker) return;
+      map.closePopup();
+      waypointMoveState = { id: record.id, lat: record.lat, lng: record.lng };
+      const marker = visuals.marker;
+      marker.setIcon(createWaypointIcon(record.type, record.windAngle, "waypoint-marker--moving"));
+      if (marker.dragging) marker.dragging.enable();
+      const label = document.getElementById("wpMoveLabel");
+      if (label) label.textContent = `Drag "${record.name || "Waypoint"}" to its new spot, then tap Done.`;
+      const bar = document.getElementById("wpMoveBar");
+      if (bar) bar.style.display = "flex";
+    }
+
+    function finishWaypointMove(save) {
+      if (!waypointMoveState) return;
+      const state = waypointMoveState;
+      waypointMoveState = null;
+      const bar = document.getElementById("wpMoveBar");
+      if (bar) bar.style.display = "none";
+      const record = waypointRecords.find(wp => String(wp.id) === String(state.id));
+      const visuals = record ? waypointVisualsById.get(record.id) : null;
+      if (!record || !visuals || !visuals.marker) return;
+      const marker = visuals.marker;
+      if (marker.dragging) marker.dragging.disable();
+      if (save) {
         const next = marker.getLatLng();
         record.lat = next.lat;
         record.lng = next.lng;
         marker.setPopupContent(buildWaypointPopup(record));
         queueSyncSave();
         refreshWaypointWind(record, true); // moved: fetch wind for the new spot
-      });
-
-      marker.on("contextmenu", () => removeWaypointById(record.id));
-
-      waypointVisualsById.set(record.id, { marker });
-      refreshWaypointWind(record); // async: per-spot wind for this waypoint
+      } else {
+        marker.setLatLng([state.lat, state.lng]);
+      }
+      marker.setIcon(createWaypointIcon(record.type, record.windAngle));
     }
 
     function renderAllWaypoints() {
@@ -3536,36 +3686,55 @@
       });
     }
 
-    // Show waypoint creation modal
-    function showWaypointModal(latlng) {
+    // Show waypoint creation modal, or the edit form when a record is passed
+    function showWaypointModal(latlng, existingRecord = null) {
+      const isEdit = !!existingRecord;
       const typeOptions = Object.entries(waypointTypes)
-        .map(([key, data]) => `<option value="${key}">${data.label}</option>`)
+        .map(([key, data]) => `<option value="${key}"${isEdit && existingRecord.type === key ? " selected" : ""}>${data.label}</option>`)
         .join('');
 
       const modal = document.getElementById('modalBackdrop');
       const modalContent = document.querySelector('#modalBackdrop .modal');
-      
+
       modalContent.innerHTML = `
-        <h3>New Waypoint</h3>
+        <h3>${isEdit ? "Edit Waypoint" : "New Waypoint"}</h3>
         <label style="display: block; margin: 8px 0 4px 0; font-size: 13px; color: var(--muted);">Name (optional)</label>
-        <input type="text" id="waypointNameInput" placeholder="e.g., East Treestand" style="width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text); box-sizing: border-box;">
-        
+        <input type="text" id="waypointNameInput" placeholder="e.g., East Treestand" value="${isEdit ? escapeHtmlText(existingRecord.name || "") : ""}" style="width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text); box-sizing: border-box;">
+
         <label style="display: block; margin: 8px 0 4px 0; font-size: 13px; color: var(--muted);">Type</label>
         <select id="waypointTypeSelect" style="width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text); box-sizing: border-box;">
           ${typeOptions}
         </select>
         <div class="modal-buttons">
           <button class="modal-btn secondary" onclick="document.getElementById('modalBackdrop').style.display = 'none'">Cancel</button>
-          <button class="modal-btn primary" id="confirmWaypointBtn">Place</button>
+          <button class="modal-btn primary" id="confirmWaypointBtn">${isEdit ? "Save" : "Place"}</button>
         </div>
       `;
-      
+
       modal.style.display = 'flex';
-      
+
       // Focus on name input
       setTimeout(() => document.getElementById('waypointNameInput').focus(), 100);
-      
+
       document.getElementById('confirmWaypointBtn').addEventListener('click', async () => {
+        const type = document.getElementById('waypointTypeSelect').value;
+        const customName = document.getElementById('waypointNameInput').value.trim();
+
+        if (isEdit) {
+          existingRecord.type = type;
+          existingRecord.name = customName;
+          const visuals = waypointVisualsById.get(existingRecord.id);
+          if (visuals && visuals.marker) {
+            visuals.marker.setIcon(createWaypointIcon(type, existingRecord.windAngle));
+            visuals.marker.wayPointType = type;
+            visuals.marker.customName = customName;
+            visuals.marker.setPopupContent(buildWaypointPopup(existingRecord));
+          }
+          queueSyncSave();
+          modal.style.display = 'none';
+          return;
+        }
+
         // Auto-fetch weather if wind data not loaded yet
         if (currentWind.speed === 0 && !lastWeatherData) {
           try {
@@ -3574,9 +3743,7 @@
             console.warn("Could not fetch weather for waypoint", err);
           }
         }
-        
-        const type = document.getElementById('waypointTypeSelect').value;
-        const customName = document.getElementById('waypointNameInput').value.trim();
+
         const waypoint = {
           id: crypto.randomUUID(),
           lat: latlng.lat,
@@ -3589,7 +3756,7 @@
         waypointRecords.push(waypoint);
         addWaypointRecord(waypoint, true);
         queueSyncSave();
-        
+
         modal.style.display = 'none';
       });
     }
@@ -3602,6 +3769,7 @@
 
     mapContainer.addEventListener('click', (evt) => {
       if (measuring) return;
+      if (waypointMoveState) return;
 
       const target = evt.target;
       if (!target) return;
@@ -3649,6 +3817,26 @@
     let longPressStartPoint = null;
     let longPressLatLng = null;
 
+    function showHoldRing(clientX, clientY) {
+      const ring = document.getElementById("wpHoldRing");
+      const fg = document.getElementById("wpHoldRingFg");
+      if (!ring || !fg) return;
+      ring.style.left = clientX + "px";
+      ring.style.top = clientY + "px";
+      ring.style.display = "block";
+      fg.style.transition = "none";
+      fg.style.strokeDashoffset = "125.6";
+      // Force reflow so the fill animation restarts cleanly, then run it.
+      void fg.getBoundingClientRect();
+      fg.style.transition = `stroke-dashoffset ${WAYPOINT_LONG_PRESS_MS}ms linear`;
+      fg.style.strokeDashoffset = "0";
+    }
+
+    function hideHoldRing() {
+      const ring = document.getElementById("wpHoldRing");
+      if (ring) ring.style.display = "none";
+    }
+
     function cancelLongPress() {
       if (longPressTimer) {
         clearTimeout(longPressTimer);
@@ -3656,6 +3844,7 @@
       }
       longPressStartPoint = null;
       longPressLatLng = null;
+      hideHoldRing();
     }
 
     function eventTargetIsUi(target) {
@@ -3673,16 +3862,24 @@
     if (IS_TOUCH_DEVICE) {
       mapContainer.addEventListener('touchstart', (evt) => {
         if (measuring) return;
+        if (waypointMoveState) return;
         if (eventTargetIsUi(evt.target)) return;
-        if (!evt.touches || evt.touches.length !== 1) return;
+        // A press that starts on an existing pin is for that pin, never a new one.
+        if (evt.target && evt.target.closest && (evt.target.closest('.waypoint-marker') || evt.target.closest('.leaflet-marker-icon'))) return;
+        if (!evt.touches || evt.touches.length !== 1) {
+          cancelLongPress();
+          return;
+        }
 
         longPressTriggered = false;
         const touch = evt.touches[0];
         longPressStartPoint = map.mouseEventToContainerPoint(touch);
         longPressLatLng = map.mouseEventToLatLng(touch);
+        showHoldRing(touch.clientX, touch.clientY);
 
         longPressTimer = setTimeout(() => {
           longPressTriggered = true;
+          hideHoldRing();
           suppressAreaPopupUntil = Date.now() + 900;
           map.closePopup();
           setWaypointPlacementMode(false);
@@ -3745,6 +3942,47 @@
         alert("Could not create share link for this pin.");
       });
     });
+
+    // Waypoint popup actions: Edit / Move / Delete (Share is handled above).
+    document.addEventListener("click", (evt) => {
+      const btn = evt.target?.closest?.("[data-wp-action]");
+      if (!btn) return;
+
+      evt.preventDefault();
+      evt.stopPropagation();
+      const id = String(btn.dataset.waypointId || "").trim();
+      const record = waypointRecords.find(wp => String(wp.id) === id);
+      if (!record) return;
+      const action = btn.dataset.wpAction;
+
+      if (action === "edit") {
+        map.closePopup();
+        showWaypointModal(L.latLng(record.lat, record.lng), record);
+      } else if (action === "move") {
+        enterWaypointMoveMode(record);
+      } else if (action === "delete") {
+        if (btn.dataset.armed === "1") {
+          map.closePopup();
+          removeWaypointById(record.id);
+          return;
+        }
+        btn.dataset.armed = "1";
+        btn.textContent = "Tap again to delete";
+        btn.classList.add("armed");
+        setTimeout(() => {
+          if (btn.isConnected) {
+            btn.dataset.armed = "";
+            btn.textContent = "Delete";
+            btn.classList.remove("armed");
+          }
+        }, 3500);
+      }
+    });
+
+    const wpMoveDoneBtn = document.getElementById("wpMoveDoneBtn");
+    if (wpMoveDoneBtn) wpMoveDoneBtn.addEventListener("click", () => finishWaypointMove(true));
+    const wpMoveCancelBtn = document.getElementById("wpMoveCancelBtn");
+    if (wpMoveCancelBtn) wpMoveCancelBtn.addEventListener("click", () => finishWaypointMove(false));
 
     importSharedWaypointsFromUrl();
 
