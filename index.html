@@ -5277,6 +5277,130 @@
       }
     }
 
+    // ---- Area label placement ------------------------------------------------
+    // Labels go at the polygon's pole of inaccessibility (its deepest interior
+    // point), never the bounding-box center: for concave areas the bbox center
+    // can land in a NEIGHBORING area (that is how "38" rendered over 36A).
+    function areaRingSignedDistance(x, y, ring) {
+      let inside = false;
+      let minDistSq = Infinity;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i], b = ring[j];
+        if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const t = (dx || dy) ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy))) : 0;
+        const px = a[0] + t * dx - x, py = a[1] + t * dy - y;
+        const d = px * px + py * py;
+        if (d < minDistSq) minDistSq = d;
+      }
+      return (inside ? 1 : -1) * Math.sqrt(minDistSq);
+    }
+
+    function areaRingCentroid(ring) {
+      let area = 0, cx = 0, cy = 0;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i], b = ring[j];
+        const f = a[0] * b[1] - b[0] * a[1];
+        cx += (a[0] + b[0]) * f;
+        cy += (a[1] + b[1]) * f;
+        area += f * 3;
+      }
+      if (area === 0) return [ring[0][0], ring[0][1]];
+      return [cx / area, cy / area];
+    }
+
+    function areaPointInRing(lat, lng, ring) {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+        if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    }
+
+    function areaPolylabel(ring, precision = 0.00005) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of ring) {
+        if (p[0] < minX) minX = p[0];
+        if (p[1] < minY) minY = p[1];
+        if (p[0] > maxX) maxX = p[0];
+        if (p[1] > maxY) maxY = p[1];
+      }
+      const width = maxX - minX, height = maxY - minY;
+      const cellSize = Math.max(Math.min(width, height), precision);
+      if (cellSize === precision) return [minX, minY];
+      const h0 = cellSize / 2;
+      function makeCell(x, y, h) {
+        const d = areaRingSignedDistance(x, y, ring);
+        return { x, y, h, d, max: d + h * Math.SQRT2 };
+      }
+      let cells = [];
+      for (let x = minX; x < maxX; x += cellSize) {
+        for (let y = minY; y < maxY; y += cellSize) {
+          cells.push(makeCell(x + h0, y + h0, h0));
+        }
+      }
+      const centroid = areaRingCentroid(ring);
+      let best = makeCell(centroid[0], centroid[1], 0);
+      const bboxCell = makeCell(minX + width / 2, minY + height / 2, 0);
+      if (bboxCell.d > best.d) best = bboxCell;
+      while (cells.length) {
+        let bi = 0;
+        for (let i = 1; i < cells.length; i++) if (cells[i].max > cells[bi].max) bi = i;
+        const cell = cells.splice(bi, 1)[0];
+        if (cell.d > best.d) best = cell;
+        if (cell.max - best.d <= precision) continue;
+        const nh = cell.h / 2;
+        cells.push(
+          makeCell(cell.x - nh, cell.y - nh, nh),
+          makeCell(cell.x + nh, cell.y - nh, nh),
+          makeCell(cell.x - nh, cell.y + nh, nh),
+          makeCell(cell.x + nh, cell.y + nh, nh)
+        );
+      }
+      return [best.x, best.y];
+    }
+
+    // Returns [lng, lat] guaranteed inside the feature's largest ring, or null.
+    function computeAreaLabelPoint(geometry) {
+      try {
+        if (!geometry) return null;
+        let rings = [];
+        if (geometry.type === "Polygon") rings = geometry.coordinates || [];
+        else if (geometry.type === "MultiPolygon") rings = (geometry.coordinates || []).flat();
+        if (!rings.length) return null;
+        let bestRing = null, bestArea = -1;
+        for (const ring of rings) {
+          if (!Array.isArray(ring) || ring.length < 3) continue;
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const p of ring) {
+            if (p[0] < minX) minX = p[0];
+            if (p[1] < minY) minY = p[1];
+            if (p[0] > maxX) maxX = p[0];
+            if (p[1] > maxY) maxY = p[1];
+          }
+          const a = (maxX - minX) * (maxY - minY);
+          if (a > bestArea) { bestArea = a; bestRing = ring; }
+        }
+        if (!bestRing) return null;
+        const pt = areaPolylabel(bestRing);
+        if (areaPointInRing(pt[1], pt[0], bestRing)) return pt;
+        // Fallback: bbox center of the largest ring, if it is inside.
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of bestRing) {
+          if (p[0] < minX) minX = p[0];
+          if (p[1] < minY) minY = p[1];
+          if (p[0] > maxX) maxX = p[0];
+          if (p[1] > maxY) maxY = p[1];
+        }
+        const bc = [(minX + maxX) / 2, (minY + maxY) / 2];
+        if (areaPointInRing(bc[1], bc[0], bestRing)) return bc;
+        return pt;
+      } catch (e) {
+        return null;
+      }
+    }
+
     async function renderFLWAreas(statusIndex) {
       try {
         if (flwAreasLayer) { map.removeLayer(flwAreasLayer); flwAreasLayer = null; }
@@ -5565,7 +5689,8 @@
 
           const labelName = String(f?.properties?.area_name || "").trim();
           if (labelName) {
-            const center = layer.getBounds().getCenter();
+            const labelPt = computeAreaLabelPoint(f?.geometry);
+            const center = labelPt ? L.latLng(labelPt[1], labelPt[0]) : layer.getBounds().getCenter();
             const label = L.tooltip({
               permanent: true,
               direction: "center",
