@@ -13,7 +13,7 @@
 //   non-GET requests: NEVER intercepted. Live status stays live; the
 //   frontend keeps its own clearly-labeled "last known" copy on-device.
 
-const SW_VERSION = "v2";
+const SW_VERSION = "v3";
 const SHELL_CACHE = `huntao-shell-${SW_VERSION}`;
 const TILE_CACHE = `huntao-tiles-${SW_VERSION}`;
 const DATA_CACHE = `huntao-data-${SW_VERSION}`;
