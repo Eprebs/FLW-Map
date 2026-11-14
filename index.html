@@ -1416,8 +1416,8 @@
     <h3>Terrain Overlays</h3>
     <div class="drawer-section">
       <label class="drawer-label">
-        <input type="checkbox" id="contoursToggle" disabled>
-        Contours (temporarily disabled)
+        <input type="checkbox" id="contoursToggle">
+        Contours
       </label>
       <label class="drawer-label">
         <input type="checkbox" id="hillshadeToggle">
@@ -1978,6 +1978,87 @@
       } else if (!hillshadeToggle.checked && hillshadeActive) {
         map.removeLayer(hillshadeLayer);
         hillshadeActive = false;
+      }
+    });
+
+    // Contours overlay (USGS 3DEP, 20 ft interval, 100 ft index lines).
+    // Server returns per-tile line data as JSON; tiles are drawn on canvas
+    // here so elevation labels stay crisp. The service worker caches the
+    // /tiles/contours/ responses like any other map tile (works offline).
+    function drawContourTile(ctx, data) {
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      const lines = data.l || [];
+      for (let li = 0; li < lines.length; li++) {
+        const c = lines[li][2]; // delta-encoded coords, 0.1 px units
+        const isIdx = lines[li][1] === 1;
+        ctx.beginPath();
+        let x = c[0] / 10;
+        let y = c[1] / 10;
+        ctx.moveTo(x, y);
+        for (let i = 2; i < c.length; i += 2) {
+          x += c[i] / 10;
+          y += c[i + 1] / 10;
+          ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = isIdx ? "rgba(146,102,50,0.95)" : "rgba(178,142,88,0.7)";
+        ctx.lineWidth = isIdx ? 2 : 1;
+        ctx.stroke();
+      }
+      const labels = data.t || [];
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (let ti = 0; ti < labels.length; ti++) {
+        const lb = labels[ti];
+        ctx.save();
+        ctx.translate(lb[0], lb[1]);
+        ctx.rotate((lb[2] * Math.PI) / 180);
+        ctx.font = "bold 10px Arial, sans-serif";
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(43,32,16,0.9)";
+        const text = String(lb[3]);
+        ctx.strokeText(text, 0, 0);
+        ctx.fillStyle = "#f8ecd4";
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      }
+    }
+
+    const ContoursGridLayer = L.GridLayer.extend({
+      createTile: function (coords, done) {
+        const tile = document.createElement("canvas");
+        tile.width = 256;
+        tile.height = 256;
+        const ctx = tile.getContext("2d");
+        fetch(`tiles/contours/flw/${coords.z}/${coords.x}/${coords.y}.json`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data) drawContourTile(ctx, data);
+            done(null, tile);
+          })
+          .catch(() => done(null, tile));
+        return tile;
+      }
+    });
+
+    const contoursLayer = new ContoursGridLayer({
+      minZoom: 12,
+      maxZoom: 19,
+      minNativeZoom: 12,
+      maxNativeZoom: 16,
+      bounds: L.latLngBounds([37.54, -92.31], [37.86, -91.97]),
+      attribution: "Contours: USGS 3DEP"
+    });
+
+    let contoursActive = false;
+    const contoursToggle = document.getElementById("contoursToggle");
+    contoursToggle.addEventListener("change", () => {
+      if (contoursToggle.checked && !contoursActive) {
+        contoursLayer.addTo(map);
+        contoursActive = true;
+      } else if (!contoursToggle.checked && contoursActive) {
+        map.removeLayer(contoursLayer);
+        contoursActive = false;
       }
     });
 

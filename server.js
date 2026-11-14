@@ -1064,6 +1064,26 @@ function normalizeStatusDate(input) {
   return todayISO();
 }
 
+// ----------------------------------------------------
+// Contours overlay data (USGS 3DEP, pre-generated per-tile
+// line data; served at /tiles/contours/flw/{z}/{x}/{y}.json
+// so the service worker caches it like any other tile)
+// ----------------------------------------------------
+let contoursFlwTiles = null;
+try {
+  const parsed = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "data", "contours_flw.json"), "utf8")
+  );
+  const rawTiles = parsed.tiles || {};
+  contoursFlwTiles = {};
+  for (const k of Object.keys(rawTiles)) {
+    contoursFlwTiles[k] = JSON.stringify(rawTiles[k]);
+  }
+  console.log(`Contours loaded: ${Object.keys(contoursFlwTiles).length} FLW tiles`);
+} catch (e) {
+  console.warn("Contours data not loaded:", e.message);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -1934,6 +1954,26 @@ const server = http.createServer(async (req, res) => {
   // ----------------------------------------------------
   if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
     return serveFile(res, path.join(__dirname, "index.html"), "text/html; charset=utf-8");
+  }
+
+  // ----------------------------------------------------
+  // Contours overlay tiles (JSON line data, drawn client-side)
+  // ----------------------------------------------------
+  const contourMatch = pathname.match(/^\/tiles\/contours\/flw\/(\d+)\/(\d+)\/(\d+)\.json$/);
+  if (req.method === "GET" && contourMatch) {
+    const key = `${contourMatch[1]}/${contourMatch[2]}/${contourMatch[3]}`;
+    const tile = contoursFlwTiles ? contoursFlwTiles[key] : null;
+    if (tile) {
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=86400"
+      });
+      res.end(tile);
+    } else {
+      res.writeHead(404);
+      res.end("Not found");
+    }
+    return;
   }
 
   // ----------------------------------------------------
