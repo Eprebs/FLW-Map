@@ -2030,7 +2030,7 @@
         tile.width = 256;
         tile.height = 256;
         const ctx = tile.getContext("2d");
-        fetch(`tiles/contours/flw/${coords.z}/${coords.x}/${coords.y}.json`)
+        fetch(`tiles/contours/${currentBaseId}/${coords.z}/${coords.x}/${coords.y}.json`)
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
             if (data) drawContourTile(ctx, data);
@@ -2041,12 +2041,23 @@
       }
     });
 
+    const CONTOURS_BOUNDS = {
+      fort_leonard_wood: [[37.54, -92.31], [37.86, -91.97]],
+      imported_installation: [[31.804, -81.934], [32.17, -81.071]],
+      fort_belvoir: [[38.629, -77.248], [38.798, -77.077]],
+      asis: [[34.956, -79.569], [35.32, -78.857]],
+      fort_wainwright: [[63.422, -148.698], [64.923, -144.967]],
+      fort_riley: [[38.992, -97.008], [39.352, -96.637]],
+      jblm: [[46.857, -122.847], [47.184, -122.325]],
+      fort_drum: [[43.966, -75.881], [44.302, -75.341]]
+    };
+
     const contoursLayer = new ContoursGridLayer({
       minZoom: 12,
       maxZoom: 19,
       minNativeZoom: 12,
       maxNativeZoom: 16,
-      bounds: L.latLngBounds([37.54, -92.31], [37.86, -91.97]),
+      bounds: L.latLngBounds(CONTOURS_BOUNDS[DEFAULT_BASE_ID]),
       attribution: "Contours: USGS 3DEP"
     });
 
@@ -2061,6 +2072,14 @@
         contoursActive = false;
       }
     });
+
+    // Keep the contour layer pointed at the current installation.
+    function refreshContoursForBase() {
+      const b = CONTOURS_BOUNDS[currentBaseId];
+      if (!b) return;
+      contoursLayer.options.bounds = L.latLngBounds(b);
+      if (contoursActive) contoursLayer.redraw();
+    }
 
     // -----------------------------
     // Drawer logic
@@ -2430,6 +2449,7 @@
       const base = BASE_LOCATIONS[baseId];
       if (!base) return;
       map.setView(base.center, base.zoom);
+      if (typeof refreshContoursForBase === "function") refreshContoursForBase();
     }
 
     populateBaseSelect();

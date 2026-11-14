@@ -1066,22 +1066,41 @@ function normalizeStatusDate(input) {
 
 // ----------------------------------------------------
 // Contours overlay data (USGS 3DEP, pre-generated per-tile
-// line data; served at /tiles/contours/flw/{z}/{x}/{y}.json
-// so the service worker caches it like any other tile)
+// line data; served at /tiles/contours/<base>/{z}/{x}/{y}.json
+// so the service worker caches it like any other tile).
+// Loaded lazily per installation on first request.
 // ----------------------------------------------------
-let contoursFlwTiles = null;
-try {
-  const parsed = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "data", "contours_flw.json"), "utf8")
-  );
-  const rawTiles = parsed.tiles || {};
-  contoursFlwTiles = {};
-  for (const k of Object.keys(rawTiles)) {
-    contoursFlwTiles[k] = JSON.stringify(rawTiles[k]);
+const CONTOURS_BASES = new Set([
+  "fort_leonard_wood",
+  "imported_installation",
+  "fort_belvoir",
+  "asis",
+  "fort_wainwright",
+  "fort_riley",
+  "jblm",
+  "fort_drum"
+]);
+const contoursCache = new Map();
+function getContoursTiles(base) {
+  if (!CONTOURS_BASES.has(base)) return null;
+  if (contoursCache.has(base)) return contoursCache.get(base);
+  let tiles = null;
+  try {
+    const parsed = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "data", `contours_${base}.json`), "utf8")
+    );
+    const rawTiles = parsed.tiles || {};
+    tiles = {};
+    for (const k of Object.keys(rawTiles)) {
+      tiles[k] = JSON.stringify(rawTiles[k]);
+    }
+    console.log(`Contours loaded (${base}): ${Object.keys(tiles).length} tiles`);
+  } catch (e) {
+    console.warn(`Contours data not loaded for ${base}:`, e.message);
+    tiles = null;
   }
-  console.log(`Contours loaded: ${Object.keys(contoursFlwTiles).length} FLW tiles`);
-} catch (e) {
-  console.warn("Contours data not loaded:", e.message);
+  contoursCache.set(base, tiles);
+  return tiles;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1959,10 +1978,11 @@ const server = http.createServer(async (req, res) => {
   // ----------------------------------------------------
   // Contours overlay tiles (JSON line data, drawn client-side)
   // ----------------------------------------------------
-  const contourMatch = pathname.match(/^\/tiles\/contours\/flw\/(\d+)\/(\d+)\/(\d+)\.json$/);
+  const contourMatch = pathname.match(/^\/tiles\/contours\/([a-z_]+)\/(\d+)\/(\d+)\/(\d+)\.json$/);
   if (req.method === "GET" && contourMatch) {
-    const key = `${contourMatch[1]}/${contourMatch[2]}/${contourMatch[3]}`;
-    const tile = contoursFlwTiles ? contoursFlwTiles[key] : null;
+    const baseTiles = getContoursTiles(contourMatch[1]);
+    const key = `${contourMatch[2]}/${contourMatch[3]}/${contourMatch[4]}`;
+    const tile = baseTiles ? baseTiles[key] : null;
     if (tile) {
       res.writeHead(200, {
         "Content-Type": "application/json",
