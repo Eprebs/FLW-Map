@@ -202,6 +202,61 @@
       opacity: 0.95;
     }
 
+    .support-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin: 0 0 10px 0;
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      text-decoration: none;
+    }
+
+    .support-badge-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--slate);
+      white-space: nowrap;
+    }
+
+    .support-badge img {
+      height: 20px;
+      width: auto;
+      display: block;
+    }
+
+    .supporters-logo {
+      max-width: 170px;
+      height: auto;
+      display: block;
+      margin: 2px auto 0 auto;
+    }
+
+    #mapCredit {
+      position: absolute;
+      left: 10px;
+      bottom: 78px;
+      z-index: 999;
+      background: var(--glass-strong);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(7px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.28);
+    }
+
+    #mapCredit a {
+      color: var(--gold-strong);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
     .drawer-btn {
       width: 100%;
       padding: 10px;
@@ -1348,6 +1403,7 @@
 </head>
 <body>
   <div id="map"></div>
+  <div id="mapCredit">Training area data via <a href="https://www.isportsman.com" target="_blank" rel="noopener">iSportsman</a> &middot; <span id="mapCreditBase">Fort Leonard Wood</span></div>
   <div id="mapLoadBanner" aria-live="polite"></div>
 
   <button id="drawerToggle">☰</button>
@@ -1356,6 +1412,11 @@
     <div class="drawer-brand">
       <img src="Logo2.png" alt="HuntAO">
     </div>
+
+    <a class="support-badge" href="https://www.isportsman.com" target="_blank" rel="noopener">
+      <span class="support-badge-label">Supported by</span>
+      <img src="isportsman-logo.svg" alt="iSportsman">
+    </a>
 
     <h3>Bases</h3>
     <div class="drawer-section">
@@ -1468,10 +1529,22 @@
       </div>
     </div>
 
+    <a id="supportersPortalLink" class="drawer-btn" href="https://ftleonardwood.isportsman.net/Login.aspx" target="_blank" rel="noopener" style="display: block; text-align: center; text-decoration: none; box-sizing: border-box; margin-bottom: 12px;">Permits &amp; Check-In on iSportsman</a>
+
+    <h3>Supporters</h3>
+    <div class="drawer-section">
+      <a href="https://www.isportsman.com" target="_blank" rel="noopener">
+        <img class="supporters-logo" src="isportsman-logo.svg" alt="iSportsman">
+      </a>
+      <div class="drawer-info" style="margin-top: 8px; line-height: 1.45;">
+        iSportsman supports HuntAO and the use of our publicly available information on platforms to encourage hunting, fishing and outdoor recreation.
+      </div>
+    </div>
+
     <h3>Legal & Sources</h3>
     <div class="drawer-section">
       <div class="drawer-info" style="line-height: 1.45;">
-        HuntAO is a private tool and is not affiliated with, endorsed by, or operated by the U.S. Army, DoD, iSportsman, ESRI, OpenStreetMap, USGS, or OpenTopoMap.
+        HuntAO is a private tool and is not affiliated with, endorsed by, or operated by the U.S. Army, DoD, ESRI, OpenStreetMap, USGS, or OpenTopoMap.
       </div>
       <div class="drawer-info" style="margin-top: 8px; line-height: 1.45;">
         Official installation rules and iSportsman status are the controlling authority. If this app conflicts with official sources, follow the official source.
@@ -2450,6 +2523,7 @@
       if (!base) return;
       map.setView(base.center, base.zoom);
       if (typeof refreshContoursForBase === "function") refreshContoursForBase();
+      if (typeof updateBrandingForBase === "function") updateBrandingForBase();
     }
 
     populateBaseSelect();
@@ -6713,5 +6787,27 @@
       } catch (err) { /* Stats are optional; never break the app. */ }
     })();
   </script>
+<script>
+  // iSportsman branding: keep the map credit and the Supporters portal
+  // link pointed at the currently selected installation.
+  function updateBrandingForBase() {
+    var label = "Fort Leonard Wood";
+    var url = "https://ftleonardwood.isportsman.net/Login.aspx";
+    try {
+      if (typeof getCurrentInstallation === "function") {
+        var inst = getCurrentInstallation();
+        if (inst) {
+          if (inst.label) label = inst.label;
+          if (inst.signInUrl) url = inst.signInUrl;
+        }
+      }
+    } catch (e) {}
+    var baseEl = document.getElementById("mapCreditBase");
+    if (baseEl) baseEl.textContent = label;
+    var link = document.getElementById("supportersPortalLink");
+    if (link) link.href = url;
+  }
+  updateBrandingForBase();
+</script>
 </body>
 </html>
